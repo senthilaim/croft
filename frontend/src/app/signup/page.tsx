@@ -14,7 +14,7 @@ export default function SignupPage() {
       <div className="hidden w-1/2 flex-col justify-between bg-foreground p-10 text-background lg:flex">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Logo className="h-6 w-6" />
-          Buildfarm
+          Croft
         </Link>
         <div>
           <h2 className="text-3xl font-semibold leading-tight text-balance">
@@ -30,7 +30,7 @@ export default function SignupPage() {
           </ul>
         </div>
         <p className="text-xs text-background/50">
-          © {new Date().getFullYear()} Buildfarm as a Service
+          © {new Date().getFullYear()} Croft
         </p>
       </div>
 
@@ -40,7 +40,7 @@ export default function SignupPage() {
           className="flex items-center gap-2 font-semibold text-black lg:hidden dark:text-zinc-50"
         >
           <Logo className="h-6 w-6" />
-          Buildfarm
+          Croft
         </Link>
 
         <div className="w-full max-w-sm rounded-xl border border-black/10 bg-white p-8 shadow-sm dark:border-white/10 dark:bg-zinc-900">

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Post, UseGuards } from '@nestjs/common';
-import type { AuthResponse, AuthTokens, User } from '@bazel-bootstrap/shared-types';
+import type { AuthResponse, AuthTokens, User } from '@croft/shared-types';
 import { AuthService, toUserDto } from './auth.service.js';
 import { SignupDto } from './dto/signup.dto.js';
 import { SigninDto } from './dto/signin.dto.js';

@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { BuildfarmConfigStatus, BuildfarmNodeType } from '@bazel-bootstrap/shared-types';
+import type { BuildfarmConfigStatus, BuildfarmNodeType } from '@croft/shared-types';
 
 export type BuildfarmConfigDocument = HydratedDocument<BuildfarmConfig>;
 

@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsNumber, IsObject, IsString, ValidateNested } from 'class-validator';
-import type { BuildfarmNodeType } from '@bazel-bootstrap/shared-types';
+import type { BuildfarmNodeType } from '@croft/shared-types';
 
 const NODE_TYPES: BuildfarmNodeType[] = ['server', 'worker', 'redis', 'cache'];
 

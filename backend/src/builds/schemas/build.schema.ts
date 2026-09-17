@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { BuildStatus } from '@bazel-bootstrap/shared-types';
+import type { BuildStatus } from '@croft/shared-types';
 
 export type BuildDocument = HydratedDocument<Build>;
 
@@ -16,6 +16,77 @@ export class BuildTargetEntry {
   durationMs!: number;
 }
 const BuildTargetSchema = SchemaFactory.createForClass(BuildTargetEntry);
+
+@Schema({ _id: false })
+export class BuildActionEntry {
+  @Prop({ type: String, default: null })
+  label!: string | null;
+
+  @Prop({ default: '' })
+  mnemonic!: string;
+
+  @Prop({ required: true, default: 0 })
+  exitCode!: number;
+
+  @Prop({ type: [String], default: [] })
+  commandLine!: string[];
+
+  @Prop({ type: String, default: null })
+  primaryOutputPath!: string | null;
+
+  @Prop({ type: String, default: null })
+  startTime!: string | null;
+
+  @Prop({ type: String, default: null })
+  endTime!: string | null;
+
+  @Prop({ type: String, default: null })
+  stdout!: string | null;
+
+  @Prop({ type: String, default: null })
+  stderr!: string | null;
+}
+const BuildActionSchema = SchemaFactory.createForClass(BuildActionEntry);
+
+@Schema({ _id: false })
+export class WaterfallSpanEntry {
+  // Not `required: true` -- some of Bazel's own trace profile spans genuinely have an empty
+  // name/category, and Mongoose treats "" as absent for a required string, rejecting the save.
+  @Prop({ default: '' })
+  name!: string;
+
+  @Prop({ default: '' })
+  category!: string;
+
+  @Prop({ default: '' })
+  lane!: string;
+
+  @Prop({ required: true })
+  startMs!: number;
+
+  @Prop({ required: true })
+  durationMs!: number;
+}
+const WaterfallSpanSchema = SchemaFactory.createForClass(WaterfallSpanEntry);
+
+@Schema({ _id: false })
+export class BuildArtifactEntry {
+  @Prop({ required: true })
+  targetLabel!: string;
+
+  @Prop({ required: true })
+  name!: string;
+
+  @Prop({ required: true, default: 0 })
+  sizeBytes!: number;
+
+  // Internal CAS reference used only by BuildsService.fetchArtifactBytes -- deliberately left
+  // out of the public Build DTO (toBuildDto), same boundary already drawn for how action
+  // stdout/stderr are inlined content but this is a fetch key, not content.
+  @Prop({ required: true })
+  uri!: string;
+}
+const BuildArtifactSchema = SchemaFactory.createForClass(BuildArtifactEntry);
 
 @Schema({ timestamps: true })
 export class Build {
@@ -54,7 +125,21 @@ export class Build {
 
   @Prop({ required: true, default: 0 })
   remoteCacheHits!: number;
+
+  @Prop({ type: [BuildActionSchema], default: [] })
+  actions!: BuildActionEntry[];
+
+  @Prop({ type: [WaterfallSpanSchema], default: [] })
+  waterfall!: WaterfallSpanEntry[];
+
+  @Prop({ type: String, default: null })
+  consoleLog!: string | null;
+
+  @Prop({ type: [BuildArtifactSchema], default: [] })
+  artifacts!: BuildArtifactEntry[];
 }
 
 export const BuildSchema = SchemaFactory.createForClass(Build);
 BuildSchema.index({ workspaceId: 1, createdAt: -1 });
+// Supports both findAllForWorkspace's sort and the trends aggregation's date-range $match.
+BuildSchema.index({ workspaceId: 1, startTime: -1 });

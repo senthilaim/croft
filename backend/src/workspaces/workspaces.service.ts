@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import type { Workspace as WorkspaceDto } from '@bazel-bootstrap/shared-types';
+import type { Workspace as WorkspaceDto } from '@croft/shared-types';
 import { Workspace, WorkspaceDocument } from './schemas/workspace.schema.js';
 
 @Injectable()

@@ -3,14 +3,29 @@ syntax = "proto3";
 package build_event_stream;
 
 import "blaze/action_cache.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 // Deliberately minimal, hand-trimmed subset of Bazel's own
 // src/main/java/com/google/devtools/build/lib/buildeventstream/proto/build_event_stream.proto,
 // keeping only the message/field names and numbers this app actually reads (started,
-// target-completed, aborted, progress, build metrics, finished). Protobuf ignores unknown
-// fields on the wire, so this parses real Bazel BEP payloads correctly without vendoring every
-// transitively-imported message.
+// target-completed, aborted, progress, build metrics, finished, action-executed, build-tool-logs,
+// test-summary, named-set-of-files). Protobuf ignores unknown fields on the wire, so this parses
+// real Bazel BEP payloads correctly without vendoring every transitively-imported message.
+
+// Overall status of a test target for one invocation (accumulated over all its runs/shards/
+// attempts) -- see TestSummary below.
+enum TestStatus {
+  NO_STATUS = 0;
+  PASSED = 1;
+  FLAKY = 2;
+  TIMEOUT = 3;
+  FAILED = 4;
+  INCOMPLETE = 5;
+  REMOTE_FAILURE = 6;
+  FAILED_TO_BUILD = 7;
+  TOOL_HALTED_BEFORE_TESTING = 8;
+}
 
 message BuildEventId {
   message TargetCompletedId {
@@ -22,12 +37,52 @@ message BuildEventId {
   message ConfiguredLabelId {
     string label = 1;
   }
+  // Identifies which action an ActionExecuted payload belongs to. primary_output/label are the
+  // only fields we read -- primary_output is populated even for failed actions (unlike the
+  // deprecated, success-only fields of the same name on ActionExecuted itself), so it's the
+  // reliable way to know which output an action failure is for.
+  message ActionCompletedId {
+    string primary_output = 1;
+    string label = 2;
+  }
+  message TestSummaryId {
+    string label = 1;
+  }
+  // Identifies a NamedSetOfFiles event -- the id is only an opaque string, valid solely within
+  // this one invocation's event stream (never persisted or compared across builds).
+  message NamedSetOfFilesId {
+    string id = 1;
+  }
 
   oneof id {
     TargetCompletedId target_completed = 5;
+    ActionCompletedId action_completed = 6;
+    TestSummaryId test_summary = 7;
+    NamedSetOfFilesId named_set = 13;
     UnconfiguredLabelId unconfigured_label = 19;
     ConfiguredLabelId configured_label = 21;
   }
+}
+
+// A reference to one file Bazel produced or consumed -- either inline (small text, e.g. a short
+// test log) or as a local file:// URI. We only ever see the URI form in practice, since this app
+// runs no BES artifact-upload backend.
+message File {
+  string name = 1;
+  oneof file {
+    string uri = 2;
+    bytes contents = 3;
+  }
+  int64 length = 6;
+}
+
+// A set of build output files, referred to by id from OutputGroup.file_sets rather than listed
+// per-target -- so a file produced once but used by several targets is only sent once on the
+// wire. file_sets here lets one named set point at others, forming a small DAG we resolve by
+// walking it when a TargetComplete event references the top of it.
+message NamedSetOfFiles {
+  repeated File files = 1;
+  repeated BuildEventId.NamedSetOfFilesId file_sets = 2;
 }
 
 message BuildStarted {
@@ -36,8 +91,17 @@ message BuildStarted {
   string command = 5;
 }
 
+// Collection of all output files belonging to one output group (e.g. "default", the plain
+// `bazel build` outputs -- Bazel also reports others like instrumentation/coverage sets, which
+// we don't read).
+message OutputGroup {
+  string name = 1;
+  repeated BuildEventId.NamedSetOfFilesId file_sets = 3;
+}
+
 message TargetComplete {
   bool success = 1;
+  repeated OutputGroup output_group = 2;
 }
 
 // Emitted when a target/label could not be built at all (e.g. a missing dependency or an
@@ -92,6 +156,38 @@ message BuildMetrics {
   ActionSummary action_summary = 1;
 }
 
+// Emitted for a single action's execution -- by default only when it fails (capturing every
+// action requires --build_event_publish_all_actions, which this app doesn't set). This is the
+// per-action detail (mnemonic, exit code, command line, stdout/stderr) behind a build's failed
+// actions table.
+message ActionExecuted {
+  bool success = 1;
+  int32 exit_code = 2;
+  File stdout = 3;
+  File stderr = 4;
+  // The action's mnemonic (e.g. "CppCompile", "Javac").
+  string type = 8;
+  repeated string command_line = 9;
+  google.protobuf.Timestamp start_time = 12;
+  google.protobuf.Timestamp end_time = 13;
+}
+
+// Lists Bazel's own log files for this invocation, each as a File (so a local file:// URI). We
+// only look for the JSON trace profile here -- it's how we locate the file backing the timing
+// waterfall without having to guess or configure a path.
+message BuildToolLogs {
+  repeated File log = 1;
+}
+
+// Bazel's own aggregate result for one test target over all its runs/shards/attempts in this
+// invocation -- exactly the right grain for one test-grid cell, so we don't need the more
+// granular per-attempt TestResult event at all.
+message TestSummary {
+  TestStatus overall_status = 5;
+  int32 run_count = 10;
+  google.protobuf.Duration total_run_duration = 12;
+}
+
 message BuildFinished {
   message ExitCode {
     string name = 1;
@@ -109,8 +205,12 @@ message BuildEvent {
     Progress progress = 3;
     Aborted aborted = 4;
     BuildStarted started = 5;
+    ActionExecuted action = 7;
     TargetComplete completed = 8;
+    TestSummary test_summary = 9;
     BuildFinished finished = 14;
+    NamedSetOfFiles named_set_of_files = 15;
     BuildMetrics build_metrics = 24;
+    BuildToolLogs build_tool_logs = 23;
   }
 }

@@ -1,4 +1,4 @@
-import type { BuildStatus } from "@bazel-bootstrap/shared-types";
+import type { BuildStatus } from "@croft/shared-types";
 
 const STATUS_LABEL: Record<BuildStatus, string> = {
   success: "Success",

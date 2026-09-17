@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Buildfarm as a Service",
+  title: "Croft",
   description: "Design, provision, and monitor a Bazel Buildfarm on your own machine.",
 };
 

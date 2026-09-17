@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import type {
   BuildfarmConfig as BuildfarmConfigDto,
   BuildfarmConfigStatus,
-} from '@bazel-bootstrap/shared-types';
+} from '@croft/shared-types';
 import {
   BuildfarmConfig,
   BuildfarmConfigDocument,

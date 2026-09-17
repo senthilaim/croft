@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Build } from "@bazel-bootstrap/shared-types";
+import type { Build } from "@croft/shared-types";
 
 interface DurationChartProps {
   builds: Build[];

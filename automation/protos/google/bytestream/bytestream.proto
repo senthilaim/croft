@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package google.bytestream;
+
+// Deliberately minimal, hand-trimmed subset of googleapis' real
+// google/bytestream/bytestream.proto, keeping only the Read RPC (this app is a reader, never a
+// writer, of Buildfarm's CAS) -- Write/QueryWriteStatus and their messages are omitted entirely.
+//
+// This exists because Bazel doesn't give local file:// paths for BEP-referenced files (the JSON
+// trace profile, per-action stdout/stderr) once a remote cache is configured -- confirmed via
+// --remote_build_event_upload's own flag docs: "bytestream:// scheme is always used for the uri
+// of files [important to BEP consumers, e.g. timing profile and logs] even if they are missing
+// from remote cache." So reading them back means being a real ByteStream client against
+// whichever Buildfarm server the bytestream:// URI names (already known -- it's the same server
+// Bazel just uploaded to).
+service ByteStream {
+  rpc Read(ReadRequest) returns (stream ReadResponse);
+}
+
+message ReadRequest {
+  string resource_name = 1;
+  int64 read_offset = 2;
+  int64 read_limit = 3;
+}
+
+message ReadResponse {
+  bytes data = 10;
+}

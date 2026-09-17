@@ -13,6 +13,7 @@ python3 -m grpc_tools.protoc \
   protos/blaze/action_cache.proto \
   protos/build_event_stream/build_event_stream.proto \
   protos/google/devtools/build/v1/build_events.proto \
-  protos/google/devtools/build/v1/publish_build_event.proto
+  protos/google/devtools/build/v1/publish_build_event.proto \
+  protos/google/bytestream/bytestream.proto
 
 echo "Generated Python stubs in app/generated/"

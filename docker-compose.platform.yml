@@ -1,9 +1,9 @@
-name: bazel-bootstrap-platform
+name: croft-platform
 
 services:
   mongo:
     image: mongo:7
-    container_name: bazel-bootstrap-mongo
+    container_name: croft-mongo
     restart: unless-stopped
     ports:
       - "27018:27017"

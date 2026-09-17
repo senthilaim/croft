@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { Workspace } from "@bazel-bootstrap/shared-types";
+import type { Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { CreateWorkspaceForm } from "@/components/create-workspace-form";

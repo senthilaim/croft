@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { BuildfarmConfig, BuildfarmInstance } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmConfig, BuildfarmInstance } from "@croft/shared-types";
 import { backendFetch } from "@/lib/session";
 import { BuildfarmCanvas } from "@/components/designer/buildfarm-canvas";
 

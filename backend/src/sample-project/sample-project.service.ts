@@ -3,11 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { ZipArchive } from 'archiver';
 
 export function buildModuleBazel(): string {
-  return `module(name = "buildfarm_sample", version = "0.1.0")\n`;
+  // sh_test moved out of native builtins into rules_shell in modern Bazel -- needed for the
+  // test targets below (BUILD.bazel loads sh_test from here).
+  return `module(name = "buildfarm_sample", version = "0.1.0")
+
+bazel_dep(name = "rules_shell", version = "0.8.0")
+`;
 }
 
 export function buildBuildFile(): string {
-  return `genrule(
+  return `load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+genrule(
     name = "hello",
     outs = ["hello.txt"],
     cmd = "echo 'Hello from Bazel Buildfarm!' > $@",
@@ -111,6 +118,48 @@ genrule(
     outs = ["broken_dependency.txt"],
     cmd = "cp $< $@",
 )
+
+# ---------------------------------------------------------------------------
+# Test targets: stable, always-failing, and flaky. Run each a handful of times to build up
+# history on the Test grid -- stable_test stays all-green, always_fails_test all-red, and
+# flaky_test's outcome genuinely varies from run to run. See README.md.
+# ---------------------------------------------------------------------------
+
+sh_test(
+    name = "stable_test",
+    srcs = ["stable_test.sh"],
+)
+
+sh_test(
+    name = "always_fails_test",
+    srcs = ["always_fails_test.sh"],
+)
+
+sh_test(
+    name = "flaky_test",
+    srcs = ["flaky_test.sh"],
+)
+`;
+}
+
+export function buildStableTestScript(): string {
+  return `#!/bin/bash
+exit 0
+`;
+}
+
+export function buildAlwaysFailsTestScript(): string {
+  return `#!/bin/bash
+echo "this test always fails, on purpose -- see the Test grid" >&2
+exit 1
+`;
+}
+
+export function buildFlakyTestScript(): string {
+  return `#!/bin/bash
+# Genuinely random per invocation (not just Bazel's own intra-run retry detection) --
+# this is what demonstrates the Test grid's cross-run flakiness detection.
+exit $((RANDOM % 2))
 `;
 }
 
@@ -134,6 +183,20 @@ build --bes_backend=grpc://localhost:${besPort}
 build --bes_header=x-workspace-id=${workspaceId}
 build --bes_timeout=10s
 build --bes_upload_mode=nowait_for_upload_complete
+
+# Bazel's .bazelrc sections are command-specific -- "build" flags above don't apply to
+# "bazel test" on their own, so the remote/BES setup is repeated here for the Test grid to work.
+${executionEnabled ? `test --remote_executor=grpc://localhost:${grpcPort}\n` : ''}test --remote_cache=grpc://localhost:${grpcPort}
+test --bes_backend=grpc://localhost:${besPort}
+test --bes_header=x-workspace-id=${workspaceId}
+test --bes_timeout=10s
+test --bes_upload_mode=nowait_for_upload_complete
+# Lets Bazel's own intra-run retry detection ("flaky" status) kick in sometimes, on top of the
+# Test grid's separate across-run flakiness detection.
+test --flaky_test_attempts=3
+# This sample project's tests exist to demonstrate live dashboard/grid data -- caching a result
+# would mean re-running "bazel test" shows nothing new, defeating the point.
+test --nocache_test_results
 `;
 }
 
@@ -205,6 +268,21 @@ the dashboard tracks:
 
 Each of the four commands above shows up as its own row on the dashboard with its own status,
 target count, cache hits/misses, duration, and (for the two failures) a reason.
+
+## Test grid: flaky-test detection across runs
+
+Three test targets, each demonstrating a different pattern on the workspace's **Test grid**
+page:
+
+    bazel test //:stable_test //:always_fails_test //:flaky_test
+
+\`stable_test\` always passes and \`always_fails_test\` always fails -- run the command above a
+few times and their rows stay solid green / solid red. \`flaky_test\` picks pass or fail at
+random each run (\`exit $((RANDOM % 2))\` -- see \`flaky_test.sh\`), on purpose: run the command
+**5-10 times** and its row will show a genuine mix, which is what the grid flags as **flaky
+across runs** -- a different, more useful signal than Bazel's own single-invocation "flaky"
+retry status (also visible here, since \`.bazelrc\` sets \`--flaky_test_attempts=3\`). Results
+aren't cached (\`--nocache_test_results\`), so every run reports fresh, live data to the grid.
 `;
 }
 
@@ -225,6 +303,11 @@ export class SampleProjectService {
     archive.append(buildBuildFile(), { name: 'BUILD.bazel' });
     archive.append(buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled), { name: '.bazelrc' });
     archive.append(buildReadme(workspaceName, grpcPort, executionEnabled), { name: 'README.md' });
+    // mode: 0o755 -- Bazel's sandbox runs sh_test srcs directly, so the script needs its
+    // executable bit set inside the zip, not just readable.
+    archive.append(buildStableTestScript(), { name: 'stable_test.sh', mode: 0o755 });
+    archive.append(buildAlwaysFailsTestScript(), { name: 'always_fails_test.sh', mode: 0o755 });
+    archive.append(buildFlakyTestScript(), { name: 'flaky_test.sh', mode: 0o755 });
     archive.finalize();
     return archive;
   }

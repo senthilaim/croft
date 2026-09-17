@@ -1,5 +1,18 @@
-import { BadRequestException, Controller, NotFoundException, Post, Get, UseGuards } from '@nestjs/common';
-import type { BuildfarmInstance, BuildfarmNode, InfraStats } from '@bazel-bootstrap/shared-types';
+import {
+  BadRequestException,
+  Controller,
+  NotFoundException,
+  Post,
+  Get,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import type {
+  BuildfarmInstance,
+  BuildfarmNode,
+  InfraStats,
+  InfraTrendSeries,
+} from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
@@ -56,5 +69,15 @@ export class ProvisioningController {
   @Get('infra')
   infra(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<InfraStats> {
     return this.provisioningService.infra(workspace.id);
+  }
+
+  @Get('infra/trends')
+  infraTrends(
+    @CurrentWorkspace() workspace: WorkspaceDocument,
+    @Query('hours') hours?: string,
+  ): Promise<InfraTrendSeries[]> {
+    const parsed = Number.parseInt(hours ?? '', 10);
+    const clamped = Number.isFinite(parsed) ? Math.min(168, Math.max(1, parsed)) : 24;
+    return this.provisioningService.infraTrends(workspace.id, clamped);
   }
 }

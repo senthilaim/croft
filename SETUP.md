@@ -1,7 +1,7 @@
 # Setup & Run Guide
 
-Step-by-step instructions to get Bazel Buildfarm as a Service running on your machine, end to
-end: sign up, design a Buildfarm, provision it, and run real remote builds that stream live to
+Step-by-step instructions to get Croft (Bazel Buildfarm as a Service) running on your machine,
+end to end: sign up, design a Buildfarm, provision it, and run real remote builds that stream live to
 the dashboard as they happen — status, targets, duration, failure reasons, remote cache hit rate,
 and container CPU/memory. For architecture/design notes, see [README.md](README.md).
 
@@ -65,7 +65,7 @@ Verify it's healthy:
 
 ```bash
 docker compose -f docker-compose.platform.yml ps
-# bazel-bootstrap-mongo should show "Up ... (healthy)"
+# croft-mongo should show "Up ... (healthy)"
 ```
 
 Leave this running — it only needs to be started once per machine session (`docker compose ... down`
@@ -160,6 +160,12 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    Worker is in cache-only mode, these targets still build (locally, on your own machine) and the
    second run still shows cache hits — just served from the Worker's cache instead of executed on
    it.
+
+8. **Drill into one build** — click **View details** on any row (or `bazel build //:broken_action`
+   and click through) to open its permalink at `/workspaces/<id>/builds/<buildId>`. You'll see the
+   failing action's mnemonic, exit code, and command line, with its stdout/stderr downloadable from
+   the browser, plus a timing waterfall of every action Bazel ran during that build (not just the
+   failed ones) — parsed straight from Bazel's own JSON trace profile.
 
 ## 5. Stop everything
 

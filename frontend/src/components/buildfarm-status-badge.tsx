@@ -1,4 +1,4 @@
-import type { BuildfarmInstanceStatus } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmInstanceStatus } from "@croft/shared-types";
 
 const STATUS_LABEL: Record<BuildfarmInstanceStatus, string> = {
   running: "Running",

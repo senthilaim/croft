@@ -1,4 +1,4 @@
-import type { BuildfarmNodeConfig, BuildfarmNodeType } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmNodeConfig, BuildfarmNodeType } from "@croft/shared-types";
 
 export const NODE_PALETTE: { type: BuildfarmNodeType; label: string; description: string }[] = [
   { type: "server", label: "Server", description: "Buildfarm execution server" },

@@ -13,3 +13,16 @@ export interface ContainerStats {
 export interface InfraStats {
   containers: ContainerStats[];
 }
+
+/** One bucket of averaged CPU/mem for a container, from GET .../buildfarm/infra/trends. */
+export interface InfraTrendPoint {
+  timestamp: string;
+  cpuPercent: number;
+  memPercent: number;
+}
+
+export interface InfraTrendSeries {
+  containerName: string;
+  role: ContainerRole;
+  points: InfraTrendPoint[];
+}

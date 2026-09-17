@@ -24,7 +24,7 @@ import type {
   BuildfarmInstance,
   BuildfarmNode,
   BuildfarmNodeType,
-} from "@bazel-bootstrap/shared-types";
+} from "@croft/shared-types";
 import { nodeTypes, type BuildfarmNodeData } from "./buildfarm-node";
 import { Palette, DRAG_DATA_TYPE } from "./palette";
 import { ConfigPanel } from "./config-panel";

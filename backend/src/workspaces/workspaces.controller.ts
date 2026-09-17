@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import type { Workspace } from '@bazel-bootstrap/shared-types';
+import type { Workspace } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentUserId } from '../auth/current-user-id.decorator.js';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';

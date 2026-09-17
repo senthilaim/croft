@@ -35,7 +35,7 @@ export default async function Home() {
       <header className="flex h-16 shrink-0 items-center justify-between px-6">
         <div className="flex items-center gap-2 font-semibold text-black dark:text-zinc-50">
           <Logo className="h-6 w-6" />
-          Buildfarm
+          Croft
         </div>
         <nav className="flex items-center gap-4 text-sm">
           <Link
@@ -55,7 +55,7 @@ export default async function Home() {
 
       <main className="flex flex-1 flex-col items-center px-6 py-16 text-center sm:py-24">
         <h1 className="max-w-2xl text-4xl font-semibold tracking-tight text-balance text-black sm:text-5xl dark:text-zinc-50">
-          Bazel Buildfarm as a Service, on your own machine
+          Croft — your own Bazel Buildfarm, on your own machine
         </h1>
         <p className="mt-5 max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
           Design a remote-execution cluster visually, provision it with one click, and watch every

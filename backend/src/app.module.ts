@@ -17,7 +17,7 @@ import { BuildsModule } from './builds/builds.module.js';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGODB_URI', 'mongodb://localhost:27017/bazel-bootstrap'),
+        uri: config.get<string>('MONGODB_URI', 'mongodb://localhost:27017/croft'),
       }),
     }),
     HealthModule,

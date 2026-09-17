@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import type { BuildfarmInstance, Workspace } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmInstance, Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { BuildfarmStatusBadge } from "@/components/buildfarm-status-badge";

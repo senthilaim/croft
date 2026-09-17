@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { User } from "@bazel-bootstrap/shared-types";
+import type { User } from "@croft/shared-types";
 import { Logo } from "./logo";
 
 interface AppHeaderProps {
@@ -33,7 +33,7 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
           className="flex shrink-0 items-center gap-2 font-semibold text-black dark:text-zinc-50"
         >
           <Logo className="h-6 w-6" />
-          <span className="hidden sm:inline">Buildfarm</span>
+          <span className="hidden sm:inline">Croft</span>
         </Link>
         {breadcrumb && (
           <>

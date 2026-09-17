@@ -7,7 +7,7 @@ import type {
   RedisNodeConfig,
   ServerNodeConfig,
   WorkerNodeConfig,
-} from "@bazel-bootstrap/shared-types";
+} from "@croft/shared-types";
 import { NODE_LABELS } from "./node-defaults";
 
 interface ConfigPanelProps {

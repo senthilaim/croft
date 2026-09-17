@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Build, InfraStats } from "@bazel-bootstrap/shared-types";
+import Link from "next/link";
+import type { Build, InfraStats } from "@croft/shared-types";
 import { StatTile } from "./stat-tile";
 import { DurationChart } from "./duration-chart";
 import { StatusBadge } from "./status-badge";
@@ -103,6 +104,7 @@ export function LiveDashboard({ workspaceId, initialBuilds, initialInfra }: Live
                 <th className="px-4 py-2 font-medium">Duration</th>
                 <th className="px-4 py-2 font-medium">Started</th>
                 <th className="px-4 py-2 font-medium">Reason</th>
+                <th className="px-4 py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -133,6 +135,14 @@ export function LiveDashboard({ workspaceId, initialBuilds, initialInfra }: Live
                     ) : (
                       <span className="text-zinc-400 dark:text-zinc-500">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Link
+                      href={`/workspaces/${workspaceId}/builds/${build.id}`}
+                      className="text-xs whitespace-nowrap text-zinc-500 hover:underline dark:text-zinc-400"
+                    >
+                      View details →
+                    </Link>
                   </td>
                 </tr>
               ))}

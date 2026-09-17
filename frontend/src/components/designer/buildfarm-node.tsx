@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import type { BuildfarmNodeConfig, BuildfarmNodeType } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmNodeConfig, BuildfarmNodeType } from "@croft/shared-types";
 import { NODE_LABELS } from "./node-defaults";
 
 export interface BuildfarmNodeData {

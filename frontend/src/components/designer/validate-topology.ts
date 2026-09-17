@@ -1,4 +1,4 @@
-import type { BuildfarmEdge, BuildfarmNode } from "@bazel-bootstrap/shared-types";
+import type { BuildfarmEdge, BuildfarmNode } from "@croft/shared-types";
 
 export function validateTopology(nodes: BuildfarmNode[], edges: BuildfarmEdge[]): string[] {
   const errors: string[] = [];

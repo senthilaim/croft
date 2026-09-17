@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from pymongo.database import Database
 
-from . import bes_server, docker_manager, render
+from . import bes_server, cas_client, docker_manager, infra_sampler, render
 from .auth import require_internal_token
 from .db import get_db
 from .docker_manager import ComposeError
@@ -14,10 +14,18 @@ from .topology import InvalidTopologyError, parse_topology
 
 app = FastAPI(title="Bazel Bootstrap Automation Service")
 
+TREND_BUCKET_COUNT = 60
+SAMPLE_MIN_BUCKET_SECONDS = 60  # matches infra_sampler's own sampling interval
+# Deliberately more generous than the log-read caps (ACTION_LOG_READ_CAP etc in bes_server.py) --
+# this is for actual build output binaries, not text -- but still a bounded, documented limit for
+# a local-dev tool, not a general-purpose artifact store.
+ARTIFACT_DOWNLOAD_CAP = 50_000_000
+
 
 @app.on_event("startup")
-def _start_bes_server() -> None:
+def _start_background_services() -> None:
     bes_server.start_in_background()
+    infra_sampler.start_in_background()
 
 
 def project_name_for(workspace_id: str) -> str:
@@ -131,6 +139,56 @@ def infra(workspace_id: str, db: Database = Depends(get_db)):
     return {"containers": docker_manager.container_stats(existing["containerIds"])}
 
 
+@app.get("/infra/{workspace_id}/trends", dependencies=[Depends(require_internal_token)])
+def infra_trends(workspace_id: str, hours: int = 24, db: Database = Depends(get_db)):
+    hours = max(1, min(168, hours))
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    # Fixed bucket count regardless of range, so a 7-day query doesn't return raw 60s samples.
+    bucket_seconds = max(SAMPLE_MIN_BUCKET_SECONDS, (hours * 3600) // TREND_BUCKET_COUNT)
+
+    rows = db.infra_samples.aggregate(
+        [
+            {"$match": {"workspaceId": workspace_id, "sampledAt": {"$gte": since}}},
+            {
+                "$addFields": {
+                    "sampledAtMs": {"$toLong": {"$toDate": "$sampledAt"}},
+                }
+            },
+            {
+                "$addFields": {
+                    "bucketMs": {
+                        "$subtract": [
+                            "$sampledAtMs",
+                            {"$mod": ["$sampledAtMs", bucket_seconds * 1000]},
+                        ]
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"name": "$name", "role": "$role", "bucketMs": "$bucketMs"},
+                    "cpuPercent": {"$avg": "$cpuPercent"},
+                    "memPercent": {"$avg": "$memPercent"},
+                }
+            },
+            {"$sort": {"_id.bucketMs": 1}},
+        ]
+    )
+
+    series: dict[str, dict] = {}
+    for row in rows:
+        name = row["_id"]["name"]
+        entry = series.setdefault(name, {"containerName": name, "role": row["_id"]["role"], "points": []})
+        entry["points"].append(
+            {
+                "timestamp": datetime.fromtimestamp(row["_id"]["bucketMs"] / 1000, tz=timezone.utc).isoformat(),
+                "cpuPercent": round(row["cpuPercent"], 1),
+                "memPercent": round(row["memPercent"], 1),
+            }
+        )
+    return list(series.values())
+
+
 @app.get("/status/{workspace_id}", dependencies=[Depends(require_internal_token)])
 def status(workspace_id: str, db: Database = Depends(get_db)):
     existing = db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0})
@@ -149,3 +207,13 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
         )
 
     return existing
+
+
+@app.get("/artifacts", dependencies=[Depends(require_internal_token)])
+def fetch_artifact(uri: str):
+    """Fetches one build output's bytes fresh from Buildfarm's CAS, on demand -- artifact bytes
+    are never persisted, only their {name, uri, sizeBytes} metadata (see bes_server.py)."""
+    data = cas_client.read_blob(uri, ARTIFACT_DOWNLOAD_CAP)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Artifact is no longer available")
+    return Response(content=data, media_type="application/octet-stream")

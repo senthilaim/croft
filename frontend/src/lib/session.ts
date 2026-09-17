@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import type { User } from "@bazel-bootstrap/shared-types";
+import type { User } from "@croft/shared-types";
 import { ACCESS_TOKEN_COOKIE, BACKEND_URL } from "./backend";
 
 export async function getAccessToken(): Promise<string | null> {

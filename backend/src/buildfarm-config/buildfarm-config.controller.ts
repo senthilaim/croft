@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
-import type { BuildfarmConfig } from '@bazel-bootstrap/shared-types';
+import type { BuildfarmConfig } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';

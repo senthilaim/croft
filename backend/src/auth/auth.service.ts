@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import type { AuthResponse, AuthTokens, User as UserDto } from '@bazel-bootstrap/shared-types';
+import type { AuthResponse, AuthTokens, User as UserDto } from '@croft/shared-types';
 import { UsersService } from '../users/users.service.js';
 import type { UserDocument } from '../users/schemas/user.schema.js';
 

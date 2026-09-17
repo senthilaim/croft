@@ -5,7 +5,8 @@ import type {
   BuildfarmInstance,
   BuildfarmNode,
   InfraStats,
-} from '@bazel-bootstrap/shared-types';
+  InfraTrendSeries,
+} from '@croft/shared-types';
 
 @Injectable()
 export class ProvisioningService {
@@ -64,6 +65,19 @@ export class ProvisioningService {
     }
     if (!res.ok) return { containers: [] };
     return (await res.json()) as InfraStats;
+  }
+
+  async infraTrends(workspaceId: string, hours: number): Promise<InfraTrendSeries[]> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/infra/${workspaceId}/trends?hours=${hours}`, {
+        headers: this.headers,
+      });
+    } catch {
+      throw new BadGatewayException('Could not reach the automation service');
+    }
+    if (!res.ok) return [];
+    return (await res.json()) as InfraTrendSeries[];
   }
 
   private async callAutomation(path: string, body: unknown): Promise<unknown> {

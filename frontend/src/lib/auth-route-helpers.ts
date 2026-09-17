@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { AuthResponse } from "@bazel-bootstrap/shared-types";
+import type { AuthResponse } from "@croft/shared-types";
 import {
   ACCESS_TOKEN_COOKIE,
   ACCESS_TOKEN_MAX_AGE,

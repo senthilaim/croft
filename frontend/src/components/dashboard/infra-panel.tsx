@@ -1,4 +1,4 @@
-import type { ContainerStats } from "@bazel-bootstrap/shared-types";
+import type { ContainerStats } from "@croft/shared-types";
 
 const ROLE_LABEL: Record<ContainerStats["role"], string> = {
   server: "Server",

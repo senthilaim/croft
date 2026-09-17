@@ -13,6 +13,11 @@
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-critical: #d03b3b;
+
+  /* Fixed per-role assignment (never cycled): server, worker, redis. */
+  --chart-categorical-1: #2a78d6;
+  --chart-categorical-2: #eb6834;
+  --chart-categorical-3: #1baf7a;
 }
 
 @theme inline {
@@ -36,6 +41,10 @@
     --status-good: #0ca30c;
     --status-warning: #fab219;
     --status-critical: #e66767;
+
+    --chart-categorical-1: #3987e5;
+    --chart-categorical-2: #d95926;
+    --chart-categorical-3: #199e70;
   }
 }
 
