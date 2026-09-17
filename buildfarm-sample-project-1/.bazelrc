@@ -1,9 +1,0 @@
-build --remote_executor=grpc://localhost:20007
-build --remote_cache=grpc://localhost:20007
-
-# Streams this build's progress live to the workspace's dashboard -- no extra script needed,
-# a plain "bazel build" reports live via Bazel's own Build Event Service mechanism.
-build --bes_backend=grpc://localhost:9095
-build --bes_header=x-workspace-id=6aaac3089d78ab3a77fd1815
-build --bes_timeout=10s
-build --bes_upload_mode=nowait_for_upload_complete

@@ -38,3 +38,9 @@ npm-debug.log*
 
 # testing
 coverage/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# downloaded sample project (generated per-workspace, has machine-local Bazel cache symlinks)
+buildfarm-sample-project*/
