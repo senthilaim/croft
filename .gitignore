@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build outputs
+dist/
+build/
+.next/
+out/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# python
+automation/.venv/
+automation/venv/
+automation/**/__pycache__/
+automation/**/*.pyc
+automation/app/generated/
+
+# runtime data generated per workspace (docker-compose + buildfarm configs)
+automation/runtime/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# testing
+coverage/

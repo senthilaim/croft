@@ -1,0 +1,21 @@
+{
+  "name": "bazel-bootstrap",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n mongo,backend,frontend -c blue,green,magenta \"npm:dev:mongo\" \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:mongo": "docker compose -f docker-compose.platform.yml up",
+    "dev:backend": "npm run start:dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "dev:automation": "cd automation && . venv/bin/activate && uvicorn app.main:app --reload --port 9000",
+    "build": "npm run build --workspace packages/shared-types && npm run build --workspace backend && npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

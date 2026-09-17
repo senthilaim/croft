@@ -1,0 +1,42 @@
+name: {{ project_name }}
+
+services:
+  redis:
+    image: redis:7.2.4
+    command: ["redis-server", "--maxmemory", "{{ redis_memory_mb }}mb", "--maxmemory-policy", "noeviction"]
+    deploy:
+      resources:
+        limits:
+          memory: {{ redis_memory_mb }}M
+
+  server:
+    image: bazelbuild/buildfarm-server:2.17.1
+    depends_on:
+      - redis
+    environment:
+      CONFIG_PATH: /config/config.yml
+    volumes:
+      - ./config.yml:/config/config.yml:ro
+    ports:
+      - "{{ server_host_port }}:8980"
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ server_cpu_limit }}"
+          memory: {{ server_memory_mb }}M
+
+  worker:
+    image: bazelbuild/buildfarm-worker:2.17.1
+    depends_on:
+      - server
+      - redis
+    environment:
+      CONFIG_PATH: /config/config.yml
+    volumes:
+      - ./config.yml:/config/config.yml:ro
+    deploy:
+      replicas: {{ worker_replicas }}
+      resources:
+        limits:
+          cpus: "{{ worker_cpu_limit }}"
+          memory: {{ worker_memory_mb }}M

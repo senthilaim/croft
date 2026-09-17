@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package build_event_stream;
+
+import "blaze/action_cache.proto";
+import "google/protobuf/timestamp.proto";
+
+// Deliberately minimal, hand-trimmed subset of Bazel's own
+// src/main/java/com/google/devtools/build/lib/buildeventstream/proto/build_event_stream.proto,
+// keeping only the message/field names and numbers this app actually reads (started,
+// target-completed, aborted, progress, build metrics, finished). Protobuf ignores unknown
+// fields on the wire, so this parses real Bazel BEP payloads correctly without vendoring every
+// transitively-imported message.
+
+message BuildEventId {
+  message TargetCompletedId {
+    string label = 1;
+  }
+  message UnconfiguredLabelId {
+    string label = 1;
+  }
+  message ConfiguredLabelId {
+    string label = 1;
+  }
+
+  oneof id {
+    TargetCompletedId target_completed = 5;
+    UnconfiguredLabelId unconfigured_label = 19;
+    ConfiguredLabelId configured_label = 21;
+  }
+}
+
+message BuildStarted {
+  string uuid = 1;
+  google.protobuf.Timestamp start_time = 9;
+  string command = 5;
+}
+
+message TargetComplete {
+  bool success = 1;
+}
+
+// Emitted when a target/label could not be built at all (e.g. a missing dependency or an
+// analysis-phase error) -- unlike an action failure, this carries a human-readable reason.
+message Aborted {
+  enum AbortReason {
+    UNKNOWN = 0;
+    USER_INTERRUPTED = 1;
+    TIME_OUT = 2;
+    REMOTE_ENVIRONMENT_FAILURE = 3;
+    INTERNAL = 4;
+    LOADING_FAILURE = 5;
+    ANALYSIS_FAILURE = 6;
+    SKIPPED = 7;
+    NO_ANALYZE = 8;
+    NO_BUILD = 9;
+    INCOMPLETE = 10;
+    OUT_OF_MEMORY = 11;
+  }
+
+  AbortReason reason = 1;
+  string description = 2;
+}
+
+// Chunks of Bazel's own console output -- the only place actual "ERROR: ..." action-failure
+// text is available without vendoring Bazel's full FailureDetail error taxonomy.
+message Progress {
+  string stdout = 1;
+  string stderr = 2;
+}
+
+message BuildMetrics {
+  message RunnerCount {
+    string name = 1;
+    int32 count = 2;
+    string exec_kind = 3;
+  }
+
+  message ActionSummary {
+    int64 actions_created = 1;
+    // Total actions executed. Includes remote cache hits, excludes *local* action-cache hits --
+    // this is the right denominator for a remote-cache hit rate.
+    int64 actions_executed = 2;
+    // Per-runner-kind breakdown (e.g. {name: "remote cache hit", execKind: "Remote"},
+    // {name: "internal"}, {name: "worker"}...). This -- not the deprecated remote_cache_hits
+    // field below it in the real proto, which current Bazel no longer populates -- is the
+    // actual source of the "N remote cache hit" line Bazel prints to the console.
+    repeated RunnerCount runner_count = 6;
+    blaze.ActionCacheStatistics action_cache_statistics = 7;
+  }
+
+  ActionSummary action_summary = 1;
+}
+
+message BuildFinished {
+  message ExitCode {
+    string name = 1;
+    int32 code = 2;
+  }
+
+  google.protobuf.Timestamp finish_time = 5;
+  ExitCode exit_code = 3;
+}
+
+message BuildEvent {
+  BuildEventId id = 1;
+
+  oneof payload {
+    Progress progress = 3;
+    Aborted aborted = 4;
+    BuildStarted started = 5;
+    TargetComplete completed = 8;
+    BuildFinished finished = 14;
+    BuildMetrics build_metrics = 24;
+  }
+}

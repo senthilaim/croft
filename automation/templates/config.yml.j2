@@ -1,0 +1,27 @@
+digestFunction: SHA256
+server:
+  instanceType: SHARD
+  name: shard
+  port: 8980
+backplane:
+  redisUri: redis://redis:6379
+  queues:
+  - name: cpu
+    allowUnmatched: true
+    properties:
+    - name: '*'
+      value: '*'
+worker:
+  port: 8981
+  root: /tmp/worker
+  capabilities:
+    cas: true
+    execution: {{ "true" if worker_execution_enabled else "false" }}
+  dequeueMatchSettings:
+    allowUnmatched: true
+  linkedInputDirectories:
+  - (?!external/)[^/]+
+  storages:
+  - type: FILESYSTEM
+    path: cache
+    maxSizeBytes: {{ cache_max_size_bytes }}

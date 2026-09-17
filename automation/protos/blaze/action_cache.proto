@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package blaze;
+
+// Deliberately minimal, hand-trimmed subset of Bazel's own
+// src/main/protobuf/action_cache.proto -- just the local action-cache hit/miss counters.
+
+message ActionCacheStatistics {
+  int32 hits = 3;
+  int32 misses = 4;
+}
