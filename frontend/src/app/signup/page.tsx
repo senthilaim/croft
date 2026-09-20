@@ -1,3 +1,4 @@
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
 import { Logo } from "@/components/layout/logo";
@@ -11,7 +12,7 @@ const HIGHLIGHTS = [
 export default function SignupPage() {
   return (
     <div className="flex min-h-screen">
-      <div className="hidden w-1/2 flex-col justify-between bg-foreground p-10 text-background lg:flex">
+      <div className="hidden w-1/2 flex-col justify-between bg-brand-panel p-10 text-white lg:flex">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Logo className="h-6 w-6" />
           Croft
@@ -20,7 +21,7 @@ export default function SignupPage() {
           <h2 className="text-3xl font-semibold leading-tight text-balance">
             Design, provision, and watch your Buildfarm live.
           </h2>
-          <ul className="mt-6 flex flex-col gap-2.5 text-sm text-background/75">
+          <ul className="mt-6 flex flex-col gap-2.5 text-sm text-white/75">
             {HIGHLIGHTS.map((item) => (
               <li key={item} className="flex items-center gap-2">
                 <span className="h-1 w-1 shrink-0 rounded-full bg-background/50" />
@@ -29,12 +30,13 @@ export default function SignupPage() {
             ))}
           </ul>
         </div>
-        <p className="text-xs text-background/50">
+        <p className="text-xs text-white/50">
           © {new Date().getFullYear()} Croft
         </p>
       </div>
 
-      <div className="flex w-full flex-col items-center justify-center gap-6 bg-zinc-50 px-6 py-16 lg:w-1/2 dark:bg-black">
+      <div className="relative flex w-full flex-col items-center justify-center gap-6 bg-zinc-50 px-6 py-16 lg:w-1/2 dark:bg-black">
+        <ThemeToggle className="absolute right-4 top-4" />
         <Link
           href="/"
           className="flex items-center gap-2 font-semibold text-black lg:hidden dark:text-zinc-50"

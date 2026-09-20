@@ -49,7 +49,7 @@ export function CreateWorkspaceForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="shrink-0 rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+        className="shrink-0 rounded-full bg-brand px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
       >
         {submitting ? "Creating…" : "Create workspace"}
       </button>

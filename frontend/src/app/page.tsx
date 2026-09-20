@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { Logo } from "@/components/layout/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const FEATURES = [
   {
@@ -37,7 +38,8 @@ export default async function Home() {
           <Logo className="h-6 w-6" />
           Croft
         </div>
-        <nav className="flex items-center gap-4 text-sm">
+        <nav className="flex items-center gap-3 text-sm">
+          <ThemeToggle />
           <Link
             href="/signin"
             className="text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
@@ -46,7 +48,7 @@ export default async function Home() {
           </Link>
           <Link
             href="/signup"
-            className="flex h-9 items-center rounded-full bg-foreground px-4 font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+            className="flex h-9 items-center rounded-full bg-brand px-4 font-medium text-white transition-colors hover:bg-brand-hover"
           >
             Sign up
           </Link>
@@ -64,7 +66,7 @@ export default async function Home() {
         <div className="mt-8 flex gap-3">
           <Link
             href="/signup"
-            className="flex h-11 items-center rounded-full bg-foreground px-6 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+            className="flex h-11 items-center rounded-full bg-brand px-6 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
           >
             Get started
           </Link>

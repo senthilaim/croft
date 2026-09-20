@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { Build, InfraStats, Workspace } from "@croft/shared-types";
+import type { BuildSummary, InfraStats, Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { LiveDashboard } from "@/components/dashboard/live-dashboard";
@@ -20,14 +20,14 @@ export default async function DashboardPage({
     backendFetch(`/workspaces/${workspaceId}/buildfarm/infra`),
   ]);
   const workspace: Workspace | null = workspaceRes.ok ? await workspaceRes.json() : null;
-  const builds: Build[] = buildsRes.ok ? await buildsRes.json() : [];
+  const builds: BuildSummary[] = buildsRes.ok ? await buildsRes.json() : [];
   const infra: InfraStats = infraRes.ok ? await infraRes.json() : { containers: [] };
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <AppHeader user={user} breadcrumb={workspace ? `${workspace.name} / Build analytics` : undefined} />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
+      <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <Link
           href={`/workspaces/${workspaceId}`}
           className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"

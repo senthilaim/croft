@@ -17,7 +17,7 @@ export default async function WorkspacesPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <AppHeader user={user} />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
+      <div className="flex w-full flex-col gap-8 px-4 py-8 sm:px-8 lg:px-10">
         <div>
           <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">
             Welcome back, {firstName}
@@ -46,7 +46,7 @@ export default async function WorkspacesPage() {
               </p>
             </div>
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2">
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {workspaces.map((workspace) => (
                 <li key={workspace.id}>
                   <Link

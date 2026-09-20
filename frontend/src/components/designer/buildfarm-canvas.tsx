@@ -293,7 +293,7 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmC
                 <button
                   onClick={handleSubmitSetup}
                   disabled={submitting || issues.length > 0}
-                  className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background shadow transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+                  className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
                   {submitting ? "Setting up…" : "Submit Setup"}
                 </button>
@@ -366,7 +366,7 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmC
               <div className="flex gap-2">
                 <button
                   onClick={() => applyPreset("full-rbe")}
-                  className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+                  className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
                 >
                   Full RBE
                 </button>

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
 import type {
   Build as BuildDto,
+  BuildSummary,
   BuildTrendPoint,
   TestGridRow,
   TestRunEntry,
@@ -12,6 +13,8 @@ import type {
 import { Build, BuildDocument } from './schemas/build.schema.js';
 import { TestRun, TestRunDocument } from './schemas/test-run.schema.js';
 import { isSuccessExitCode, type BuildEventJson } from './bep-parser.js';
+import { diagnoseBuild } from './build-diagnostics.js';
+import { LiveBus } from '../live/live-bus.js';
 
 const MAX_ARTIFACTS_PER_BUILD = 300;
 
@@ -37,10 +40,16 @@ export class BuildsService {
     @InjectModel(Build.name) private readonly buildModel: Model<BuildDocument>,
     @InjectModel(TestRun.name) private readonly testRunModel: Model<TestRunDocument>,
     private readonly configService: ConfigService,
+    private readonly liveBus: LiveBus,
   ) {}
 
   /** Applies a single live BEP event, relayed from automation's BES gRPC server. */
   async ingestEvent(workspaceId: string, event: BuildEventJson): Promise<void> {
+    await this.applyEvent(workspaceId, event);
+    this.liveBus.buildsChanged(workspaceId);
+  }
+
+  private async applyEvent(workspaceId: string, event: BuildEventJson): Promise<void> {
     if (event.started?.uuid) {
       await this.buildModel.updateOne(
         { invocationId: event.started.uuid },
@@ -107,6 +116,15 @@ export class BuildsService {
         if (current.artifacts.length > MAX_ARTIFACTS_PER_BUILD) {
           current.artifacts = current.artifacts.slice(0, MAX_ARTIFACTS_PER_BUILD);
         }
+      }
+      await current.save();
+      return;
+    }
+
+    if (event.consoleUpdate) {
+      if (event.consoleUpdate.consoleLog) current.consoleLog = event.consoleUpdate.consoleLog;
+      if (!current.errorMessage && event.consoleUpdate.errorMessage) {
+        current.errorMessage = event.consoleUpdate.errorMessage;
       }
       await current.save();
       return;
@@ -184,7 +202,7 @@ export class BuildsService {
     }
   }
 
-  findAllForWorkspace(workspaceId: string, limit = 50): Promise<BuildDocument[]> {
+  findAllForWorkspace(workspaceId: string, limit = 200): Promise<BuildDocument[]> {
     return this.buildModel
       .find({ workspaceId })
       .sort({ startTime: -1 })
@@ -296,7 +314,40 @@ export class BuildsService {
   }
 }
 
-export function toBuildDto(doc: BuildDocument): BuildDto {
+export function toBuildSummaryDto(doc: BuildDocument): BuildSummary {
+  let failure: BuildSummary['failure'] = null;
+  if (doc.status === 'failure') {
+    const [first] = diagnoseBuild([doc.consoleLog, doc.errorMessage, ...doc.actions.map((a) => a.stderr)]);
+    if (first) {
+      failure = {
+        title: first.title,
+        category: first.category,
+        message: first.message,
+        file: first.file,
+        line: first.line,
+      };
+    }
+  }
+  return {
+    id: doc.id,
+    workspaceId: doc.workspaceId,
+    invocationId: doc.invocationId,
+    command: doc.command,
+    startTime: doc.startTime,
+    endTime: doc.endTime,
+    status: doc.status,
+    targets: doc.targets,
+    totalDurationMs: doc.totalDurationMs,
+    errorMessage: doc.errorMessage,
+    actionsCreated: doc.actionsCreated,
+    actionsExecuted: doc.actionsExecuted,
+    remoteCacheHits: doc.remoteCacheHits,
+    failedActionCount: doc.actions.length,
+    failure,
+  };
+}
+
+export function toBuildDto(doc: BuildDocument, includeIssues = false): BuildDto {
   return {
     id: doc.id,
     workspaceId: doc.workspaceId,
@@ -319,5 +370,9 @@ export function toBuildDto(doc: BuildDocument): BuildDto {
       name: a.name,
       sizeBytes: a.sizeBytes,
     })),
+    issues:
+      includeIssues && doc.status === 'failure'
+        ? diagnoseBuild([doc.consoleLog, doc.errorMessage, ...doc.actions.map((a) => a.stderr)])
+        : [],
   };
 }

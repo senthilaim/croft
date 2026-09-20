@@ -9,10 +9,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Build } from "@croft/shared-types";
+import type { BuildSummary } from "@croft/shared-types";
 
 interface DurationChartProps {
-  builds: Build[];
+  builds: BuildSummary[];
 }
 
 export function DurationChart({ builds }: DurationChartProps) {

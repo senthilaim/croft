@@ -1,3 +1,4 @@
+import { BuildIssues } from "@/components/dashboard/build-issues";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { Build } from "@croft/shared-types";
@@ -29,7 +30,7 @@ export default async function BuildDetailPage({
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <AppHeader user={user} breadcrumb={`Build ${build.invocationId.slice(0, 8)}`} />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
+      <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <Link
           href={`/workspaces/${workspaceId}/dashboard`}
           className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
@@ -59,7 +60,9 @@ export default async function BuildDetailPage({
           )}
         </div>
 
-        {build.errorMessage && (
+        <BuildIssues issues={build.issues ?? []} />
+
+        {build.errorMessage && (build.issues ?? []).length === 0 && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400">
             <p className="mb-1 font-medium">Failure reason</p>
             <p className="whitespace-pre-wrap font-mono text-xs">{build.errorMessage}</p>

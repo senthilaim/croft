@@ -9,11 +9,11 @@ import {
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
-import type { Build, BuildTrendPoint, TestGridRow } from '@croft/shared-types';
+import type { Build, BuildSummary, BuildTrendPoint, TestGridRow } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import type { BuildEventJson } from './bep-parser.js';
-import { BuildsService, toBuildDto } from './builds.service.js';
+import { BuildsService, toBuildDto, toBuildSummaryDto } from './builds.service.js';
 
 /**
  * Ingests live Build Event Protocol events relayed from the automation service's BES
@@ -42,9 +42,14 @@ export class BuildsController {
   constructor(private readonly buildsService: BuildsService) {}
 
   @Get()
-  async findAll(@Param('id') workspaceId: string): Promise<Build[]> {
-    const builds = await this.buildsService.findAllForWorkspace(workspaceId);
-    return builds.map(toBuildDto);
+  async findAll(
+    @Param('id') workspaceId: string,
+    @Query('limit') limit?: string,
+  ): Promise<BuildSummary[]> {
+    const parsed = Number.parseInt(limit ?? '', 10);
+    const clamped = Number.isFinite(parsed) ? Math.min(500, Math.max(1, parsed)) : 200;
+    const builds = await this.buildsService.findAllForWorkspace(workspaceId, clamped);
+    return builds.map((b) => toBuildSummaryDto(b));
   }
 
   @Get('trends')
@@ -64,7 +69,7 @@ export class BuildsController {
   ): Promise<Build> {
     const build = await this.buildsService.findOne(workspaceId, buildId);
     if (!build) throw new NotFoundException('Build not found');
-    return toBuildDto(build);
+    return toBuildDto(build, true);
   }
 
   @Get(':buildId/artifacts/:index/download')

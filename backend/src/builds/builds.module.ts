@@ -18,5 +18,6 @@ import { BuildsService } from './builds.service.js';
   ],
   controllers: [BuildsIngestController, BuildsController, TestRunsController],
   providers: [BuildsService],
+  exports: [BuildsService],
 })
 export class BuildsModule {}

@@ -7,6 +7,7 @@ COPY frontend/package.json frontend/
 RUN rm -f package-lock.json && npm install --no-audit --no-fund --workspace=frontend --workspace=@croft/shared-types --include-workspace-root
 COPY packages/shared-types packages/shared-types
 COPY frontend frontend
+ENV BACKEND_ORIGIN=http://backend:4000
 RUN npm run build -w @croft/shared-types && npm run build -w frontend
 
 FROM node:22-slim

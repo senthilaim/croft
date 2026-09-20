@@ -29,7 +29,7 @@ export default async function WorkspaceDetailPage({
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
       <AppHeader user={user} breadcrumb={workspace.name} />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
+      <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <Link
           href="/workspaces"
           className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
@@ -50,7 +50,7 @@ export default async function WorkspaceDetailPage({
           {instance && <BuildfarmStatusBadge status={instance.status} />}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4">
           <Link
             href={`/workspaces/${workspace.id}/designer`}
             className="flex flex-col gap-1 rounded-xl border border-black/10 bg-white p-4 transition-colors hover:border-black/20 hover:bg-black/[.02] dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/20 dark:hover:bg-white/[.03]"

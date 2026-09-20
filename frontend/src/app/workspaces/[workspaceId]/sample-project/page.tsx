@@ -33,7 +33,7 @@ export default async function SampleProjectPage({
         breadcrumb={workspace ? `${workspace.name} / Sample project` : undefined}
       />
 
-      <div className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
+      <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <Link
           href={`/workspaces/${workspaceId}`}
           className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
@@ -55,7 +55,7 @@ export default async function SampleProjectPage({
             </p>
             <a
               href={`/api/workspaces/${workspaceId}/sample-project`}
-              className="flex h-11 w-fit items-center justify-center rounded-full bg-foreground px-5 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+              className="flex h-11 w-fit items-center justify-center rounded-full bg-brand px-5 text-sm font-medium text-white transition-colors hover:bg-brand-hover"
             >
               Download sample project
             </a>

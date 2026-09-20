@@ -10,6 +10,8 @@ import { BuildfarmConfigModule } from './buildfarm-config/buildfarm-config.modul
 import { ProvisioningModule } from './provisioning/provisioning.module.js';
 import { SampleProjectModule } from './sample-project/sample-project.module.js';
 import { BuildsModule } from './builds/builds.module.js';
+import { LiveBusModule } from './live/live-bus.js';
+import { LiveModule } from './live/live.module.js';
 
 @Module({
   imports: [
@@ -26,7 +28,9 @@ import { BuildsModule } from './builds/builds.module.js';
     BuildfarmConfigModule,
     ProvisioningModule,
     SampleProjectModule,
+    LiveBusModule,
     BuildsModule,
+    LiveModule,
   ],
   controllers: [AppController],
   providers: [AppService],

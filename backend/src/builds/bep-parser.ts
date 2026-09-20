@@ -55,6 +55,8 @@ export interface BuildEventJson {
     errorMessage?: string;
     consoleLog?: string;
   };
+  /** Console output that arrived after `finished` (Bazel prints load/analysis errors late). */
+  consoleUpdate?: { consoleLog?: string | null; errorMessage?: string | null };
   buildMetrics?: BuildMetricsJson;
   action?: BuildActionJson;
   waterfall?: WaterfallSpanJson[];

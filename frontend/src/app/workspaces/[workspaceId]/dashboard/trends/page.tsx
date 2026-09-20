@@ -30,7 +30,7 @@ export default async function TrendsPage({
         breadcrumb={workspace ? `${workspace.name} / Historical trends` : undefined}
       />
 
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
+      <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <Link
           href={`/workspaces/${workspaceId}/dashboard`}
           className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"

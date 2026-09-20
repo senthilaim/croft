@@ -41,6 +41,25 @@ export interface BuildArtifact {
   sizeBytes: number;
 }
 
+/** One located problem found in a failed build's output, with a suggested fix. */
+export interface BuildIssue {
+  severity: "error" | "warning";
+  /** Machine-friendly bucket, e.g. "starlark", "labels", "compile", "platform", "other". */
+  category: string;
+  title: string;
+  /** The message exactly as Bazel or the compiler printed it. */
+  message: string;
+  /** Absolute path as printed by Bazel; null when the error has no location. */
+  file: string | null;
+  line: number | null;
+  column: number | null;
+  /** Raw output lines that followed the error (compiler notes, target lists...). */
+  context: string[];
+  /** True for summary lines ("Package 'x' contains errors") rather than a root cause. */
+  symptom: boolean;
+  recommendation: { summary: string; steps: string[] };
+}
+
 export interface Build {
   id: string;
   workspaceId: string;
@@ -66,7 +85,28 @@ export interface Build {
   consoleLog: string | null;
   /** Output files from each completed target's default output group. */
   artifacts: BuildArtifact[];
+  /** Located root-cause errors with fix suggestions; empty for successful builds. */
+  issues: BuildIssue[];
 }
+
+/** Root cause of a failed build, shortened from its diagnosis for lists and failure analytics. */
+export interface BuildFailureSummary {
+  title: string;
+  category: string;
+  message: string;
+  file: string | null;
+  line: number | null;
+}
+
+/** A build without its heavy detail (waterfall, console log, action output, artifacts) -- what the
+ * analytics list, filters and charts need, so hundreds can be pushed to the browser cheaply. */
+export type BuildSummary = Omit<
+  Build,
+  "actions" | "waterfall" | "consoleLog" | "artifacts" | "issues"
+> & {
+  failedActionCount: number;
+  failure: BuildFailureSummary | null;
+};
 
 /** One day's build stats for a workspace, from GET /workspaces/:id/builds/trends. */
 export interface BuildTrendPoint {

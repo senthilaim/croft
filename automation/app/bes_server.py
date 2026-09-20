@@ -75,6 +75,11 @@ class _InvocationState:
 
     def __init__(self):
         self.stderr_tail = ""
+        # Bazel emits some progress output (notably loading/analysis errors such as
+        # "ERROR: /path/BUILD:12:5: ...") only *after* the finished event, so the state must outlive
+        # it and late output is relayed as a console update.
+        self.finished = False
+        self.failed = False
         self.abort_description: str | None = None
         # NamedSetOfFiles events always arrive before the TargetComplete event(s) that
         # reference them (a BEP ordering guarantee), so caching them here as they stream in is
@@ -252,6 +257,11 @@ def _event_to_json(event: "bes_pb2.BuildEvent", state: _InvocationState) -> dict
     if which == "progress":
         state.append_output(event.progress.stdout)
         state.append_output(event.progress.stderr)
+        if state.finished and (event.progress.stdout or event.progress.stderr):
+            update = {"consoleLog": state.full_console_log()}
+            if state.failed:
+                update["errorMessage"] = state.error_message()
+            return {"consoleUpdate": update}
         return None
 
     if which == "aborted":
@@ -340,6 +350,8 @@ def _event_to_json(event: "bes_pb2.BuildEvent", state: _InvocationState) -> dict
 
     if which == "finished":
         f = event.finished
+        state.finished = True
+        state.failed = f.exit_code.code != 0
         payload = {
             "finished": {
                 "finishTime": f.finish_time.ToJsonString(),
@@ -368,6 +380,14 @@ class PublishBuildEventServicer(pb2_grpc.PublishBuildEventServicer):
         metadata = dict(context.invocation_metadata())
         workspace_id = metadata.get(WORKSPACE_HEADER, "")
 
+        seen_invocations: set[str] = set()
+        try:
+            yield from self._handle_stream(request_iterator, workspace_id, seen_invocations)
+        finally:
+            for invocation_id in seen_invocations:
+                _discard_state(invocation_id)
+
+    def _handle_stream(self, request_iterator, workspace_id, seen_invocations):
         for request in request_iterator:
             ordered = request.ordered_build_event
             stream_id = ordered.stream_id
@@ -377,13 +397,12 @@ class PublishBuildEventServicer(pb2_grpc.PublishBuildEventServicer):
                 try:
                     inner = bes_pb2.BuildEvent()
                     ordered.event.bazel_event.Unpack(inner)
+                    seen_invocations.add(invocation_id)
                     state = _state_for(invocation_id)
                     event_json = _event_to_json(inner, state)
                     if event_json is not None:
                         event_json["invocationId"] = invocation_id
                         bes_relay.post_event(workspace_id, event_json)
-                    if inner.WhichOneof("payload") == "finished":
-                        _discard_state(invocation_id)
                 except Exception:
                     log.exception(
                         "failed to decode BES event for workspace %s invocation %s",

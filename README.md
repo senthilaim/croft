@@ -134,7 +134,7 @@ Server + Worker + Redis, differing only in that one flag. The generated sample p
 `--remote_cache` is always set.
 
 The dashboard itself (`frontend/src/components/dashboard/live-dashboard.tsx`) is a client
-component that polls both `.../builds` and `.../buildfarm/infra` every 2 seconds — stat tiles
+component that receives pushed updates over a WebSocket (see "Live updates over WebSocket" below) — stat tiles
 (including aggregate cache hit rate), the duration chart, and the recent-builds table (with a
 per-build cache hit/miss count and failure reason) all reflect an in-progress build within a
 couple of seconds of it starting. The `ingest-event` endpoint is intentionally unauthenticated
@@ -147,8 +147,26 @@ localhost.
 The same dashboard shows **live container-level CPU and memory usage** for every container in the
 workspace's Buildfarm stack (server, worker(s), redis), via `docker stats --no-stream` scoped to
 that workspace's container ids: `automation`'s `GET /infra/{workspace_id}` shells out to Docker,
-`backend`'s `GET /workspaces/:id/buildfarm/infra` proxies it authenticated, and the dashboard polls
-it alongside build data.
+`backend`'s `GET /workspaces/:id/buildfarm/infra` proxies it authenticated, and the backend's
+WebSocket gateway pushes it to the dashboard alongside build data.
+
+### Live updates over WebSocket
+
+The browser opens a socket.io connection to its own origin at `/ws`; Next.js forwards the upgrade to
+the backend (`rewrites` in `frontend/next.config.ts`, target set by `BACKEND_ORIGIN` at build time),
+so no extra port is published. The backend gateway (`backend/src/live/`) authenticates the handshake
+from the same httpOnly `bf_access_token` cookie, then a `subscribe {workspaceId}` message is checked
+against workspace membership before the client joins that workspace's room and receives:
+
+- `builds` — the recent-builds list, pushed as soon as a BEP event is ingested (coalesced to at most
+  one push per 250 ms, since a single build emits hundreds of events);
+- `infra` — container CPU/memory, sampled once per workspace every 3 s **only while someone is
+  watching** and fanned out to every viewer (Docker stats has no push source).
+
+A new or reconnecting client gets a snapshot immediately. If the socket is down (proxy blocking
+upgrades, expired token, backend restart) the dashboard falls back to HTTP polling every 5 s and the
+status line turns amber until it reconnects. Only the main dashboard is live; the test grid, trends and
+build-detail pages still load on navigation/refresh.
 
 ## Historical trends
 
@@ -169,6 +187,43 @@ dashboard — 24h/7d/30d range selector, re-fetches on change:
   cleanup job). `GET /infra/{workspace_id}/trends` aggregates those samples into a fixed ~60 time
   buckets regardless of the requested range, so a 7-day query doesn't return raw minute-by-minute
   samples.
+
+## Invocation analytics (filters, KPIs, tabs)
+
+The Analytics page is built around a filter bar and four tabs. Filters (time range, status, command,
+target-pattern search) apply client-side to the most recent 200 invocations the backend pushes, and
+drive everything below them:
+
+- **KPI tiles** — total invocations, success rate (with passed/failed counts), average and p90
+  invocation time, remote hit share (remote cache hits / executed actions), running now, failed.
+- **Overview** — duration chart, container CPU/memory, and the recent-builds table.
+- **Failures** — top failure causes and most-failing file locations, grouped from the diagnosis in
+  "Failure diagnosis" below, plus a list of failed invocations linking to their detail pages.
+- **Targets** — per-target runs, failures, failure rate and average duration.
+- **Remote cache** — cache hit rate per invocation and totals.
+- **Updates: Live / Paused** — pause the WebSocket feed to inspect a stable snapshot.
+
+The list endpoint (`GET .../builds?limit=`, default 200, max 500) returns lightweight summaries
+without waterfall, console log or action output, so a full window can be pushed cheaply; the
+detail page still loads the complete build. "Remote execution share" is not shown because Bazel's
+BEP metrics used here don't report how many actions ran remotely versus locally.
+
+## Failure diagnosis ("What went wrong")
+
+Opening **View details** on a failed build shows a "What went wrong" card above the timing waterfall.
+`backend/src/builds/build-diagnostics.ts` parses Bazel's console output and each failed action's
+stderr into located issues: the file, line and column (from `ERROR: /path/BUILD.bazel:12:5: ...`,
+compiler `file:line:col: error:` lines, and Starlark tracebacks), the exact message plus any
+following context lines, and a **Recommended fix** from a rule catalogue (undefined name, syntax
+error, missing target/package/input, visibility, missing module, compile/link errors, platform
+mismatch, unreachable Buildfarm, unknown flag, permissions, ...). Summary lines such as "Package
+'app' contains errors" are hidden when a root cause was found, and duplicate echoes are removed.
+
+Bazel prints loading/analysis errors *after* its `finished` event, so the BES relay keeps per-build
+state alive and sends late console output as a `consoleUpdate` event; builds recorded before this
+was added have no captured console log and therefore no diagnosis. Paths are shown as Bazel printed
+them (absolute), with a Copy button for jumping to the location in an editor. Unrecognised errors
+still get a located card with generic advice; extend the `RULES` list to teach it new patterns.
 
 ## Test analytics: flaky-test detection across runs
 
@@ -254,8 +309,9 @@ optimistically redirects unauthenticated requests to `/workspaces/*` back to `/s
 - **No auto-refresh of the access token** — it expires after 15 minutes; the user just signs in
   again. A refresh flow exists at the API level (`POST /auth/refresh`) but isn't wired into the
   frontend yet.
-- **Live updates are polling, not push** — the dashboard polls every 2s rather than a WebSocket/SSE
-  push; noticeably "live" for any real build, just not sub-second.
+- **Live updates cover the main dashboard only** — builds and infra are pushed over a WebSocket, but
+  the test grid, trends and build-detail pages aren't live yet. The socket authenticates once at
+  connect, so a connection outlives its 15-minute access token until it drops and reconnects.
 - **Per-target build duration isn't tracked** — Bazel's `TargetComplete` event doesn't carry a
   duration field; the dashboard's duration chart uses overall build time instead.
 - **Executor utilization history only covers the last 7 days** — the `infra_samples` TTL index

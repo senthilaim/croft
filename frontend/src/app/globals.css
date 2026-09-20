@@ -1,55 +1,119 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Dark mode is driven by <html data-theme="dark"> (set before paint by the init script in
+   layout.tsx from the user's saved choice or the OS preference), not by the media query. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-  --chart-surface: #fcfcfb;
-  --chart-text-secondary: #52514e;
-  --chart-muted: #898781;
-  --chart-grid: #e1e0d9;
-  --chart-axis: #c3c2b7;
-  --chart-sequential: #2a78d6;
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-critical: #d03b3b;
+/* Enterprise palette: cool slate neutrals + a deep indigo-blue brand. Remapping the neutral scale
+   (and black) here re-themes every existing utility class without touching each component. */
+@theme {
+  --color-zinc-50: #f4f6fa;
+  --color-zinc-100: #e9edf4;
+  --color-zinc-200: #d5dbe6;
+  --color-zinc-300: #b7c0d0;
+  --color-zinc-400: #8390a6;
+  --color-zinc-500: #62708a;
+  --color-zinc-600: #4a566d;
+  --color-zinc-700: #38435a;
+  --color-zinc-800: #1f2a44;
+  --color-zinc-900: #131d33;
+  --color-zinc-950: #0a1120;
+  --color-black: #0b1324;
 
-  /* Fixed per-role assignment (never cycled): server, worker, redis. */
-  --chart-categorical-1: #2a78d6;
-  --chart-categorical-2: #eb6834;
-  --chart-categorical-3: #1baf7a;
+  --color-brand: #2350d8;
+  --color-brand-hover: #1a3fb3;
+  --color-brand-soft: #e8eeff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  color-scheme: light;
+  --background: #f4f6fa;
+  --foreground: #0b1324;
 
-    --chart-surface: #1a1a19;
-    --chart-text-secondary: #c3c2b7;
-    --chart-muted: #898781;
-    --chart-grid: #2c2c2a;
-    --chart-axis: #383835;
-    --chart-sequential: #3987e5;
-    --status-good: #0ca30c;
-    --status-warning: #fab219;
-    --status-critical: #e66767;
+  --chart-surface: #ffffff;
+  --chart-text-secondary: #4a566d;
+  --chart-muted: #8390a6;
+  --chart-grid: #e3e8f0;
+  --chart-axis: #c5cddb;
+  --chart-sequential: #2350d8;
+  --status-good: #0d8a4b;
+  --status-warning: #f2a516;
+  --status-critical: #c8352f;
 
-    --chart-categorical-1: #3987e5;
-    --chart-categorical-2: #d95926;
-    --chart-categorical-3: #199e70;
-  }
+  /* Fixed per-role assignment (never cycled): server, worker, redis. */
+  --chart-categorical-1: #2350d8;
+  --chart-categorical-2: #eb6834;
+  --chart-categorical-3: #1baf7a;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0b1324;
+  --foreground: #e6ebf5;
+
+  --chart-surface: #131d33;
+  --chart-text-secondary: #b7c0d0;
+  --chart-muted: #8390a6;
+  --chart-grid: #22304d;
+  --chart-axis: #2f3f61;
+  --chart-sequential: #5b8cff;
+  --status-good: #2fbf71;
+  --status-warning: #f5b93a;
+  --status-critical: #ef6b65;
+
+  --chart-categorical-1: #5b8cff;
+  --chart-categorical-2: #f0763f;
+  --chart-categorical-3: #2ec48c;
+
+  --color-brand: #4c7bf4;
+  --color-brand-hover: #6a91f7;
+  --color-brand-soft: #16264d;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.bg-brand-panel {
+  background: linear-gradient(155deg, #16265a 0%, #2350d8 100%);
+}
+
+/* Smooth colour change when toggling theme, but not on first paint. */
+html.theme-ready body,
+html.theme-ready header,
+html.theme-ready div {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+/* React Flow follows the app theme. */
+:root[data-theme="dark"] .react-flow {
+  --xy-background-color: #0b1324;
+  --xy-node-color: #e6ebf5;
+  --xy-edge-stroke: #5b6b88;
+  --xy-controls-button-background-color: #131d33;
+  --xy-controls-button-color: #e6ebf5;
+  --xy-controls-button-border-color: #22304d;
+  --xy-attribution-background-color: transparent;
+}
+:root[data-theme="dark"] .react-flow__controls-button svg {
+  fill: currentColor;
+}
+:root[data-theme="dark"] .react-flow__background pattern circle,
+:root[data-theme="dark"] .react-flow__background pattern path {
+  stroke: #22304d;
+  fill: #22304d;
 }
