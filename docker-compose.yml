@@ -1,0 +1,93 @@
+# Croft: the whole platform in containers. Only Docker is required.
+#   ./install.sh        (creates .env with generated secrets, then starts everything)
+# or, manually: create .env from .env.example (fill in the secrets), then `docker compose up -d`.
+#
+# Buildfarm stacks that Croft provisions are *separate* compose projects that the `automation`
+# service creates on your host's Docker daemon, with their ports published on localhost.
+name: croft
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - croft-mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  backend:
+    image: ghcr.io/senthilaim/croft-backend:${CROFT_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mongo: { condition: service_healthy }
+    environment:
+      PORT: "4000"
+      MONGODB_URI: mongodb://mongo:27017/croft
+      FRONTEND_ORIGIN: http://localhost:3000
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
+      AUTOMATION_SERVICE_URL: http://automation:9000
+      AUTOMATION_INTERNAL_TOKEN: ${AUTOMATION_INTERNAL_TOKEN:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
+      BES_PORT: "9095"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  automation:
+    image: ghcr.io/senthilaim/croft-automation:${CROFT_VERSION:-latest}
+    build:
+      context: ./automation
+    restart: unless-stopped
+    depends_on:
+      mongo: { condition: service_healthy }
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/croft
+      AUTOMATION_INTERNAL_TOKEN: ${AUTOMATION_INTERNAL_TOKEN:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
+      BACKEND_URL: http://backend:4000/api
+      BES_PORT: "9095"
+      PORT_RANGE_START: ${PORT_RANGE_START:-20000}
+      # Bazel puts `localhost:<port>` in the event stream (the address your Bazel used). From inside
+      # this container that has to be dialled through the host gateway instead.
+      CROFT_HOST_GATEWAY: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # SECURITY: this gives the service control of your Docker daemon (root-equivalent on the
+      # host). It is how Croft provisions Buildfarm containers. Ports below are bound to localhost.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - croft-runtime:/data/runtime
+    ports:
+      - "127.0.0.1:9095:9095"   # Build Event Service: your host's `bazel` connects here
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://localhost:9000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  frontend:
+    image: ghcr.io/senthilaim/croft-frontend:${CROFT_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend: { condition: service_healthy }
+    environment:
+      BACKEND_URL: http://backend:4000/api
+      # Served over plain http on localhost; Safari drops Secure cookies there. Set to "true" if
+      # you put Croft behind TLS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  croft-mongo:
+  croft-runtime:

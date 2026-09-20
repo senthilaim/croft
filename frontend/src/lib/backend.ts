@@ -10,7 +10,9 @@ export function authCookieOptions(maxAge: number) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    // Secure cookies are dropped by some browsers (Safari) on plain http://localhost, which is how
+    // the self-hosted container install is served. Set COOKIE_SECURE=true behind TLS.
+    secure: (process.env.COOKIE_SECURE ?? String(process.env.NODE_ENV === "production")) === "true",
     path: "/",
     maxAge,
   };

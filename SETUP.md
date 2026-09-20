@@ -5,6 +5,9 @@ end to end: sign up, design a Buildfarm, provision it, and run real remote build
 the dashboard as they happen — status, targets, duration, failure reasons, remote cache hit rate,
 and container CPU/memory. For architecture/design notes, see [README.md](README.md).
 
+> **Just want to run Croft?** Use `./install.sh` (Docker only) -- see the Quickstart in
+> [README.md](README.md). Everything below is the from-source development setup.
+
 ## 0. Prerequisites
 
 Install these before starting:

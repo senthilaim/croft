@@ -1,0 +1,17 @@
+.git
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+automation/venv
+automation/.venv
+automation/runtime
+automation/app/generated
+**/__pycache__
+**/.env
+**/.env.local
+bazel-monorepo
+buildfarm-sample-project*
+website
+*.md
+!README.md

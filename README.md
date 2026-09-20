@@ -5,7 +5,23 @@ customers to sign up, create a multi-tenant workspace, visually design a Bazel B
 provision it as real Docker containers, connect a sample Bazel project to it, and watch live build
 + infrastructure analytics fed by Bazel's Build Event Protocol (BEP).
 
-**→ For step-by-step setup and run instructions, see [SETUP.md](SETUP.md).**
+## Quickstart (Docker only)
+
+```sh
+git clone https://github.com/senthilaim/croft.git && cd croft
+./install.sh          # generates secrets into .env, starts everything
+# open http://localhost:3000
+```
+
+Requires Docker with Compose 2.23+. Manage it with `./croft up | down | logs | status | upgrade`.
+Data lives in named Docker volumes and survives restarts.
+
+**Security note:** the `automation` container mounts `/var/run/docker.sock` so it can create your
+Buildfarm containers as siblings on the host. That is root-equivalent access to the host's Docker,
+so Croft binds to `127.0.0.1` only. If you would rather not mount the socket, run `automation`
+natively (hybrid mode, see SETUP.md) and keep the rest in containers.
+
+**→ For development setup (running the services from source), see [SETUP.md](SETUP.md).**
 
 This README covers project layout and the design notes behind how it's built.
 

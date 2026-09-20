@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "generated"))
 
 from google.bytestream import bytestream_pb2, bytestream_pb2_grpc  # noqa: E402
 
+from .settings import settings  # noqa: E402
+
 log = logging.getLogger("cas_client")
 
 _BYTESTREAM_URI_RE = re.compile(r"^bytestream://([^/]+)/(.+)$")
@@ -30,6 +32,13 @@ _BYTESTREAM_URI_RE = re.compile(r"^bytestream://([^/]+)/(.+)$")
 # without meaningfully delaying event processing.
 READ_RETRY_ATTEMPTS = 6
 READ_RETRY_DELAY_SECONDS = 0.4
+
+
+def _reachable_target(target: str) -> str:
+    host, _, port = target.rpartition(":")
+    if settings.host_gateway and host in ("localhost", "127.0.0.1"):
+        return f"{settings.host_gateway}:{port}"
+    return target
 
 
 def _read_once(target: str, resource_name: str, cap: int) -> bytes:
@@ -52,6 +61,7 @@ def read_blob(uri: str, cap: int) -> bytes | None:
     if not match:
         return None
     target, resource_name = match.groups()
+    target = _reachable_target(target)
 
     for attempt in range(READ_RETRY_ATTEMPTS):
         try:

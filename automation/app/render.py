@@ -25,7 +25,9 @@ def render_config_yml(topology: Topology) -> str:
     )
 
 
-def render_docker_compose_yml(topology: Topology, project_name: str, server_host_port: int) -> str:
+def render_docker_compose_yml(
+    topology: Topology, project_name: str, server_host_port: int, config_yml: str
+) -> str:
     server_cfg = topology.server.config
     worker_cfg = topology.worker.config
     redis_cfg = topology.redis.config
@@ -33,6 +35,7 @@ def render_docker_compose_yml(topology: Topology, project_name: str, server_host
     template = _env.get_template("docker-compose.yml.j2")
     return template.render(
         project_name=project_name,
+        config_yml=config_yml,
         server_host_port=server_host_port,
         server_cpu_limit=server_cfg.get("cpuLimit", "1"),
         server_memory_mb=int(server_cfg.get("memoryLimitMb", 512)),

@@ -93,7 +93,7 @@ def provision(request: ProvisionRequest, db: Database = Depends(get_db)):
     save_instance(db, workspace_id, status="provisioning", container_ids=[], grpc_port=grpc_port)
 
     config_yml = render.render_config_yml(topology)
-    compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port)
+    compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port, config_yml)
     path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
 
     try:

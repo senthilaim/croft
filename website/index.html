@@ -432,28 +432,17 @@
       <div>
         <p class="label">Quickstart</p>
         <h2>Running in a few minutes.</h2>
-        <p style="margin-top:16px;color:var(--ink-2);font-size:18px">Clone it, start the database, start three services, open the app. Full steps live in SETUP.md.</p>
-        <div class="reqs"><span>Node 20+</span><span>Docker</span><span>Python 3.11+</span><span>Bazel or Bazelisk</span></div>
+        <p style="margin-top:16px;color:var(--ink-2);font-size:18px">Clone it, run the installer, open the app. Docker is the only thing you need to install.</p>
+        <div class="reqs"><span>Docker (Compose 2.23+)</span><span>Bazel or Bazelisk, for your builds</span></div>
       </div>
       <div>
         <div class="code">
           <button class="copy" type="button" id="copy" aria-label="Copy commands">Copy</button>
-<pre id="cmds"><span class="d"># one-time setup</span>
-git clone https://github.com/senthilaim/croft.git &amp;&amp; cd croft
-npm install
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
-cp automation/.env.example automation/.env
-(cd automation &amp;&amp; python3 -m venv venv &amp;&amp; . venv/bin/activate \
-  &amp;&amp; pip install -r requirements.txt &amp;&amp; ./generate_protos.sh)
-
-<span class="d"># start</span>
-docker compose -f docker-compose.platform.yml up -d
-npm run dev:backend      <span class="d"># :4000</span>
-npm run dev:automation   <span class="d"># :9000 + BES :9095</span>
-npm run dev:frontend     <span class="d"># :3000</span></pre>
+<pre id="cmds">git clone https://github.com/senthilaim/croft.git &amp;&amp; cd croft
+./install.sh
+<span class="d"># then open http://localhost:3000</span></pre>
         </div>
-        <p class="note">Then open <span class="mono">localhost:3000</span>, sign up, create a workspace and draw your farm. <a href="https://github.com/senthilaim/croft/blob/main/SETUP.md">Read SETUP.md →</a></p>
+        <p class="note">Then open <span class="mono">localhost:3000</span>, sign up, create a workspace and draw your farm. <a href="https://github.com/senthilaim/croft/blob/main/SETUP.md">Development setup →</a></p>
       </div>
     </div>
   </section>

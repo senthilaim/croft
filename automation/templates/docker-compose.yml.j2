@@ -15,8 +15,9 @@ services:
       - redis
     environment:
       CONFIG_PATH: /config/config.yml
-    volumes:
-      - ./config.yml:/config/config.yml:ro
+    configs:
+      - source: buildfarm_config
+        target: /config/config.yml
     ports:
       - "{{ server_host_port }}:8980"
     deploy:
@@ -32,11 +33,19 @@ services:
       - redis
     environment:
       CONFIG_PATH: /config/config.yml
-    volumes:
-      - ./config.yml:/config/config.yml:ro
+    configs:
+      - source: buildfarm_config
+        target: /config/config.yml
     deploy:
       replicas: {{ worker_replicas }}
       resources:
         limits:
           cpus: "{{ worker_cpu_limit }}"
           memory: {{ worker_memory_mb }}M
+
+# Inlined rather than bind-mounted: a bind mount's path is resolved by the Docker daemon on the
+# host, so it breaks when this file is generated from inside the automation container.
+configs:
+  buildfarm_config:
+    content: |
+{{ config_yml | indent(6, true) }}

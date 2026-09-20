@@ -1,0 +1,12 @@
+#!/bin/sh
+# Tiny helper around docker compose for Croft.
+set -eu
+cd "$(dirname "$0")"
+case "${1:-help}" in
+  up)      docker compose up -d --wait ;;
+  down)    docker compose down ;;
+  logs)    shift; docker compose logs -f "$@" ;;
+  status)  docker compose ps ;;
+  upgrade) docker compose pull && docker compose up -d --wait ;;
+  *) echo "usage: ./croft up|down|logs [service]|status|upgrade" ;;
+esac
