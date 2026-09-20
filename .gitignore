@@ -47,3 +47,6 @@ buildfarm-sample-project*/
 
 # local sample project used for testing against Croft
 bazel-monorepo/
+
+# proto sources live under a "build" directory
+!automation/protos/**/build/
