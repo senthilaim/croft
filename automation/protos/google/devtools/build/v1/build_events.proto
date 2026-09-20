@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package google.devtools.build.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+// Deliberately minimal, hand-trimmed subset of googleapis'
+// google/devtools/build/v1/build_events.proto -- only the BuildEvent.bazel_event field
+// (the Any-wrapped payload we actually decode) and StreamId, which carries the invocation id.
+// Every other oneof branch (console_output, invocation_attempt_started, ...) is omitted; those
+// bytes are simply skipped as unknown fields when present on the wire.
+
+message BuildEvent {
+  google.protobuf.Timestamp event_time = 1;
+
+  oneof event {
+    google.protobuf.Any bazel_event = 60;
+  }
+}
+
+message StreamId {
+  string build_id = 1;
+  string invocation_id = 6;
+}
