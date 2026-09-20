@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { BuildfarmInstance, Workspace } from "@croft/shared-types";
+import type { BuildfarmInstance, ConnectConfig, Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
+import { CopyBlock } from "@/components/copy-block";
 
 export default async function SampleProjectPage({
   params,
@@ -19,6 +20,11 @@ export default async function SampleProjectPage({
   ]);
   const workspace: Workspace | null = workspaceRes.ok ? await workspaceRes.json() : null;
   const instance: BuildfarmInstance | null = instanceRes.ok ? await instanceRes.json() : null;
+  let connect: ConnectConfig | null = null;
+  if (instance?.status === "running") {
+    const connectRes = await backendFetch(`/workspaces/${workspaceId}/sample-project/connect`);
+    connect = connectRes.ok ? await connectRes.json() : null;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -72,6 +78,35 @@ cat bazel-bin/hello.txt`}
             >
               Open Build analytics →
             </Link>
+
+            {connect && (
+              <div
+                id="your-project"
+                className="flex flex-col gap-3 rounded-xl border border-black/10 bg-white p-4 text-sm shadow-sm dark:border-white/10 dark:bg-zinc-900"
+              >
+                <p className="font-medium text-zinc-800 dark:text-zinc-200">Use your own project</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Add this to your project&apos;s <code>.bazelrc</code>. If it already points at
+                  another remote cache, put these lines <em>after</em> the existing ones — later
+                  lines win.
+                </p>
+                <CopyBlock title=".bazelrc" text={connect.bazelrc} />
+                {connect.platform && connect.platformsBuild && (
+                  <>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Your worker runs{" "}
+                      <code>
+                        {connect.platform.os}/{connect.platform.cpu}
+                      </code>
+                      . Simple projects run fine as-is. Projects with compiled toolchains (Go, Rust,
+                      Node, …) also need a matching execution platform and a toolchain build for
+                      that OS, or their tools fail with <code>Exec format error</code>.
+                    </p>
+                    <CopyBlock title="platforms/BUILD.bazel" text={connect.platformsBuild} />
+                  </>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">

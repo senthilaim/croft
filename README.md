@@ -183,6 +183,28 @@ recent `bazel test` invocation.
   otherwise. They need `rules_shell` (`sh_test` moved out of Bazel's native builtins in recent
   versions), the one `bazel_dep` in the generated `MODULE.bazel`.
 
+## Connecting your own project (execution platforms)
+
+The generated sample project is genrules and shell tests, which run anywhere. Real projects with
+compiled toolchains (Go, Rust, C++, Node, ...) can hit a platform mismatch when they run on the
+Buildfarm worker, so Croft helps with it generically for any repo.
+
+**Symptom:** `Exec format error` on a remote action. **Cause:** Bazel resolves toolchains for the
+*execution* platform, which defaults to the developer's own machine (say macOS/arm64). It then
+ships that toolchain's binaries to the Linux worker, which cannot run them. Declaring a Linux
+execution platform is necessary but not sufficient: the project's toolchains must also be
+available for that OS and CPU (for example, a Linux SDK registered alongside the host one). That
+part is a change to the project's own `MODULE.bazel`, so Croft cannot apply it for you.
+
+**What Croft does:**
+- Detects the worker's real OS/CPU (`docker image inspect`) and stores it on the instance.
+- Sample-project page, "Use your own project": a copyable `.bazelrc` (remote cache/execution,
+  BES streaming, test-scoped flags) and a `platforms/BUILD.bazel` matching the worker. The
+  platform flags are generated commented-out, since enabling them is only correct once the
+  project's toolchains support the worker's OS.
+- Build page: an `Exec format error` failure gets a callout explaining the likely cause and
+  linking back to that section.
+
 ## Auth architecture
 
 The backend issues JWT access (15m) + refresh (7d) tokens. The frontend never exposes these to

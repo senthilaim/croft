@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Croft: design, provision and watch a real Bazel Buildfarm on your own machine.">
+</head>
+<body>
+<title>Croft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Martian+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ground: #f1f3ee;
+    --card: #fbfcf9;
+    --plot: #e3e9dd;
+    --line: #c8d1c5;
+    --ink: #13231b;
+    --ink-2: #435449;
+    --moss: #4d7a45;
+    --ochre: #c98a0b;
+    --ochre-soft: rgba(201, 138, 11, 0.28);
+    --ok: #3f9a4a;
+    --warn: #e0a21c;
+    --bad: #cc4b4b;
+    --term-bg: #0d1611;
+    --term-ink: #dfe9dc;
+    --term-dim: #7f9484;
+    --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+    --body: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0d1611; --card: #121f17; --plot: #172a1e; --line: #263a2d;
+      --ink: #e7efe4; --ink-2: #9fb2a5; --moss: #86bc76; --ochre: #f0b73a;
+      --ochre-soft: rgba(240, 183, 58, 0.26);
+      --ok: #5fc06a; --warn: #f0b73a; --bad: #ee7373;
+      --term-bg: #08100b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0d1611; --card: #121f17; --plot: #172a1e; --line: #263a2d;
+    --ink: #e7efe4; --ink-2: #9fb2a5; --moss: #86bc76; --ochre: #f0b73a;
+    --ochre-soft: rgba(240, 183, 58, 0.26);
+    --ok: #5fc06a; --warn: #f0b73a; --bad: #ee7373;
+    --term-bg: #08100b;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--ochre); outline-offset: 3px; border-radius: 4px; }
+  .hero-grid > *, .qs > *, .bento > *, .fit > * { min-width: 0; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 32px); }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--moss);
+    margin: 0 0 14px;
+  }
+  h1, h2, h3 { font-family: var(--display); letter-spacing: -0.025em; margin: 0; text-wrap: balance; }
+  h2 { font-size: clamp(30px, 4.2vw, 48px); line-height: 1.08; font-weight: 700; }
+  h3 { font-size: 21px; line-height: 1.2; font-weight: 700; }
+  p { margin: 0; }
+  code, pre, .mono { font-family: var(--mono); }
+
+  /* nav */
+  .nav {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-in { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: -0.03em; }
+  .nav-links { display: flex; align-items: center; gap: 26px; font-size: 14px; color: var(--ink-2); }
+  .nav-links a { text-decoration: none; }
+  .nav-links a:hover { color: var(--ink); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 44px; padding: 0 20px; border-radius: 999px;
+    font-weight: 600; font-size: 15px; text-decoration: none;
+    border: 1px solid var(--ink); transition: transform .15s ease, background .15s ease;
+  }
+  .btn.primary { background: var(--ink); color: var(--ground); }
+  .btn.primary:hover { transform: translateY(-1px); }
+  .btn.ghost:hover { background: var(--plot); }
+  .btn.small { height: 36px; padding: 0 16px; font-size: 14px; }
+
+  /* hero */
+  .hero { position: relative; padding-block: clamp(48px, 8vw, 96px) clamp(56px, 8vw, 104px); overflow: clip; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    opacity: 0.55;
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, #000 0%, transparent 75%);
+  }
+  .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(32px, 5vw, 64px); align-items: center; }
+  .hero h1 { font-size: clamp(42px, 6.6vw, 86px); line-height: 0.98; font-weight: 800; letter-spacing: -0.04em; }
+  .hero h1 .plot { background: linear-gradient(transparent 62%, var(--ochre-soft) 62%, var(--ochre-soft) 92%, transparent 92%); padding-inline: 0.06em; }
+  .hero .sub { margin-top: 24px; font-size: clamp(17px, 1.6vw, 20px); color: var(--ink-2); max-width: 34em; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 30px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .facts span::before { content: "+ "; color: var(--ochre); }
+
+  .sheet { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: 0 1px 0 var(--line), 0 24px 48px -28px rgba(19, 35, 27, 0.35); }
+  .sheet-bar { white-space: nowrap; gap: 12px; display: flex; justify-content: space-between; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+  .live { display: inline-flex; align-items: center; gap: 7px; color: var(--ok); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+  .topo { display: block; width: 100%; height: auto; }
+  .topo .hedge { fill: none; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 7; stroke-linecap: round; }
+  .topo .node { fill: var(--plot); stroke: var(--ink); stroke-width: 1.4; }
+  .topo .node.hot { fill: var(--ochre-soft); }
+  .topo .t1 { font-family: var(--display); font-weight: 700; font-size: 17px; fill: var(--ink); letter-spacing: -0.01em; }
+  .topo .t2 { font-family: var(--mono); font-size: 10.5px; fill: var(--ink-2); }
+  .topo .wire { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+  .topo .flow { fill: none; stroke: var(--ochre); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 2 14; animation: flow 1.4s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -32; } }
+
+  .term { margin-top: 16px; background: var(--term-bg); border-radius: 14px; padding: 16px 18px; font-family: var(--mono); font-size: 12px; line-height: 1.75; color: var(--term-ink); overflow-x: auto; white-space: pre; border: 1px solid #1d2c23; }
+  .term .p { color: var(--ochre); }
+  .term .d { color: var(--term-dim); }
+  .term .g { color: #6fd07a; }
+  .term .a { color: #f0b73a; }
+  .term .r { color: #ee7373; }
+
+  /* strip */
+  .strip { border-block: 1px solid var(--line); background: var(--card); }
+  .strip-in { display: flex; flex-wrap: wrap; gap: 10px 36px; padding-block: 20px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); justify-content: space-between; }
+
+  section { padding-block: clamp(64px, 9vw, 120px); }
+  .head { max-width: 720px; margin-bottom: clamp(36px, 5vw, 56px); }
+  .head p { margin-top: 16px; color: var(--ink-2); font-size: 18px; }
+
+  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--card); overflow: hidden; counter-reset: s; }
+  .step { padding: 28px 24px 30px; border-right: 1px solid var(--line); position: relative; }
+  .step:last-child { border-right: 0; }
+  .step .n { font-family: var(--mono); font-size: 12px; color: var(--ochre); letter-spacing: 0.08em; margin-bottom: 44px; display: block; }
+  .step h3 { margin-bottom: 10px; }
+  .step p { font-size: 15px; color: var(--ink-2); }
+
+  /* features */
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .card p { color: var(--ink-2); font-size: 15.5px; }
+  .card .k { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--moss); }
+  .c-a { grid-column: span 4; } .c-b { grid-column: span 2; }
+  .c-c { grid-column: span 2; } .c-d { grid-column: span 2; } .c-e { grid-column: span 2; }
+  .c-f { grid-column: span 3; } .c-g { grid-column: span 3; }
+  .card.tint { background: var(--plot); }
+
+  .wf { margin-top: 10px; display: grid; gap: 7px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); }
+  .wf-row { display: grid; grid-template-columns: 132px 1fr; align-items: center; gap: 10px; }
+  .wf-row b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wf-track { position: relative; height: 12px; background: repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 25%); border-radius: 3px; }
+  .wf-bar { position: absolute; top: 1px; bottom: 1px; border-radius: 3px; background: var(--moss); }
+  .wf-bar.hot { background: var(--ochre); }
+  .eg { margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); opacity: .8; }
+
+  .grid-vis { display: grid; gap: 10px; margin-top: 10px; }
+  .g-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); flex-wrap: wrap; }
+  .g-row .nm { display: flex; align-items: center; gap: 8px; }
+  .tag { font-family: var(--body); font-weight: 600; font-size: 10.5px; padding: 1px 8px; border-radius: 99px; background: var(--warn); color: #1c1a10; }
+  .cells { display: flex; gap: 4px; }
+  .cells i { width: 15px; height: 15px; border-radius: 3px; background: var(--ok); display: block; }
+  .cells i.w { background: var(--warn); } .cells i.b { background: var(--bad); }
+
+  /* fits */
+  .fit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .fit .card ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 10px; }
+  .fit li { padding-left: 22px; position: relative; color: var(--ink-2); font-size: 15.5px; }
+  .fit li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 10px; height: 2px; background: var(--moss); }
+  .fit .other li::before { background: var(--line); }
+  .fit .other { background: transparent; border-style: dashed; }
+
+  /* quickstart */
+  .qs { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+  .reqs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .reqs span { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px; background: var(--card); color: var(--ink-2); }
+  .code { position: relative; }
+  .code pre { margin: 0; background: var(--term-bg); color: var(--term-ink); border-radius: 14px; padding: 22px 22px 22px; font-size: 12.5px; line-height: 1.8; overflow-x: auto; border: 1px solid #1d2c23; }
+  .code .d { color: var(--term-dim); }
+  .copy { position: absolute; top: 10px; right: 10px; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #2c4034; background: #13221a; color: var(--term-ink); font: 500 11.5px var(--mono); cursor: pointer; }
+  .copy:hover { background: #1b3125; }
+  .note { margin-top: 14px; font-size: 14px; color: var(--ink-2); }
+  .note a { color: var(--moss); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--line); padding-block: 40px 56px; font-size: 14px; color: var(--ink-2); }
+  .foot { display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: space-between; align-items: center; }
+  .foot nav { display: flex; gap: 22px; flex-wrap: wrap; }
+  .foot a { text-decoration: none; } .foot a:hover { color: var(--ink); text-decoration: underline; }
+
+  @media (max-width: 980px) {
+    .hero-grid, .qs { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr 1fr; }
+    .step:nth-child(2) { border-right: 0; }
+    .step:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    .c-a, .c-b, .c-c, .c-d, .c-e, .c-f, .c-g { grid-column: span 6; }
+    .c-c, .c-d, .c-e { grid-column: span 6; }
+  }
+  @media (max-width: 720px) {
+    .nav-links a:not(.btn) { display: none; }
+    .steps { grid-template-columns: 1fr; }
+    .step { border-right: 0; border-bottom: 1px solid var(--line); }
+    .step:last-child { border-bottom: 0; }
+    .step .n { margin-bottom: 24px; }
+    .fit { grid-template-columns: 1fr; }
+    .wf-row { grid-template-columns: 96px 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .live i, .topo .flow { animation: none; }
+    .btn { transition: none; }
+  }
+</style>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top" aria-label="Croft home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+        <rect x="1" y="1" width="11" height="11" rx="3" fill="currentColor"/>
+        <rect x="14" y="1" width="11" height="11" rx="3" fill="currentColor" opacity=".35"/>
+        <rect x="1" y="14" width="11" height="11" rx="3" fill="currentColor" opacity=".35"/>
+        <rect x="14" y="14" width="11" height="11" rx="3" fill="var(--ochre)"/>
+      </svg>
+      Croft
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#fit">Where it fits</a>
+      <a href="#start">Quickstart</a>
+      <a class="btn primary small" href="https://github.com/senthilaim/croft">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="label">Bazel Buildfarm as a Service · self-hosted</p>
+        <h1>Your own Buildfarm, on your own <span class="plot">plot.</span></h1>
+        <p class="sub">Design a remote-execution cluster on a canvas, provision it with one click, and watch every build stream in live — all on your own machine. No cloud account. No YAML.</p>
+        <div class="cta">
+          <a class="btn primary" href="#start">Get started</a>
+          <a class="btn ghost" href="https://github.com/senthilaim/croft">View on GitHub</a>
+        </div>
+        <div class="facts">
+          <span>Apache 2.0</span><span>Real Buildfarm containers</span><span>Data never leaves your machine</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="sheet">
+          <div class="sheet-bar"><span>workspace / trunk-builds</span><span class="live"><i></i>running · :20000</span></div>
+          <svg class="topo" viewBox="0 0 560 360" role="img" aria-label="A Buildfarm topology: a Server connected to a Worker and a Redis backplane">
+            <rect class="hedge" x="14" y="14" width="532" height="332" rx="22"/>
+            <path class="wire" d="M280 118 V168 H140 V222"/>
+            <path class="wire" d="M280 118 V168 H420 V222"/>
+            <path class="flow" d="M280 118 V168 H140 V222"/>
+            <path class="flow" d="M280 118 V168 H420 V222" style="animation-delay:-.7s"/>
+            <g>
+              <rect class="node hot" x="190" y="46" width="180" height="72" rx="14"/>
+              <text class="t1" x="212" y="76">Server</text>
+              <text class="t2" x="212" y="98">1 CPU · 512 MB</text>
+            </g>
+            <g>
+              <rect class="node" x="40" y="222" width="200" height="82" rx="14"/>
+              <text class="t1" x="62" y="254">Worker</text>
+              <text class="t2" x="62" y="276">executes actions</text>
+              <text class="t2" x="62" y="292">1 CPU · 1 GB</text>
+            </g>
+            <g>
+              <rect class="node" x="320" y="222" width="200" height="82" rx="14"/>
+              <text class="t1" x="342" y="254">Redis</text>
+              <text class="t2" x="342" y="276">backplane</text>
+              <text class="t2" x="342" y="292">256 MB</text>
+            </g>
+          </svg>
+        </div>
+        <div class="term" aria-label="Example terminal output"><span class="p">$</span> bazel build //:good_targets
+<span class="d">INFO:</span> 10 processes: <span class="g">9 remote cache hit</span>, 1 internal.
+<span class="d">INFO:</span> Build completed successfully, 10 total actions
+<span class="p">$</span> bazel test //:stable_test //:flaky_test //:always_fails_test
+//:stable_test          <span class="g">PASSED</span> in 0.0s
+//:flaky_test           <span class="a">FLAKY</span>, failed in 1 out of 2
+//:always_fails_test    <span class="r">FAILED</span> in 3 out of 3</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="wrap strip-in">
+      <span>Speaks Bazel's real BES + remote-execution APIs</span>
+      <span>Runs on plain Docker</span>
+      <span>Full RBE or cache-only</span>
+      <span>Zero telemetry</span>
+    </div>
+  </div>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">How it works</p>
+        <h2>From empty canvas to a live build in four moves.</h2>
+      </div>
+      <div class="steps">
+        <div class="step"><span class="n">01 — DESIGN</span><h3>Draw the farm</h3><p>Drag a Server, Worker and Redis onto the canvas, or start from a Full RBE or Cache-only preset. Tune CPU and memory per node.</p></div>
+        <div class="step"><span class="n">02 — PROVISION</span><h3>Submit Setup</h3><p>Real <code>bazelbuild/buildfarm</code> containers come up through Docker Compose, with a stable port per workspace.</p></div>
+        <div class="step"><span class="n">03 — BUILD</span><h3>Point Bazel at it</h3><p>Download the generated sample project. Its <code>.bazelrc</code> already targets your farm, so a plain <code>bazel build</code> just works.</p></div>
+        <div class="step"><span class="n">04 — WATCH</span><h3>See everything</h3><p>Status, targets, cache hits and failure reasons stream in as Bazel runs. Open any build for a timing waterfall and its outputs.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" style="padding-top:0">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">What you get</p>
+        <h2>The observability you'd pay a vendor for, running next to your code.</h2>
+      </div>
+      <div class="bento">
+        <article class="card c-a">
+          <span class="k">Live analytics</span>
+          <h3>A real Build Event Service — not a wrapper script.</h3>
+          <p>Croft runs a genuine BES gRPC server, so plain <code>bazel build</code> streams status, targets, duration, failure reasons and remote cache hit rate straight to your dashboard, with container CPU and memory beside them.</p>
+          <div class="wf" role="img" aria-label="Example timing waterfall of a build">
+            <div class="wf-row"><b>fetch_data</b><div class="wf-track"><span class="wf-bar" style="left:0;width:9%"></span></div></div>
+            <div class="wf-row"><b>transform_upper</b><div class="wf-track"><span class="wf-bar" style="left:9%;width:12%"></span></div></div>
+            <div class="wf-row"><b>transform_reverse</b><div class="wf-track"><span class="wf-bar" style="left:9%;width:11%"></span></div></div>
+            <div class="wf-row"><b>combine</b><div class="wf-track"><span class="wf-bar" style="left:22%;width:10%"></span></div></div>
+            <div class="wf-row"><b>report_a</b><div class="wf-track"><span class="wf-bar" style="left:33%;width:14%"></span></div></div>
+            <div class="wf-row"><b>slow_task</b><div class="wf-track"><span class="wf-bar hot" style="left:0;width:80%"></span></div></div>
+          </div>
+          <span class="eg">Illustrative timing waterfall, drawn from a real build's trace profile.</span>
+        </article>
+
+        <article class="card c-b tint">
+          <span class="k">Test grid</span>
+          <h3>Flaky across runs, not just within one.</h3>
+          <p>Bazel flags a test that needed a retry. Croft also flags one whose outcome changes between invocations.</p>
+          <div class="grid-vis" role="img" aria-label="Example test grid: one flaky, one always failing, one stable test">
+            <div class="g-row"><span class="nm"><span class="tag">Flaky</span>flaky_test</span><span class="cells"><i></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i class="w"></i><i></i><i></i></span></div>
+            <div class="g-row"><span class="nm">always_fails</span><span class="cells"><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i></span></div>
+            <div class="g-row"><span class="nm">stable_test</span><span class="cells"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+          </div>
+        </article>
+
+        <article class="card c-c">
+          <span class="k">Build viewer</span>
+          <h3>Open any build. Download its outputs.</h3>
+          <p>A shareable page per build: failed actions with command lines and logs, plus the output files themselves, fetched from the cache on demand and never stored.</p>
+        </article>
+        <article class="card c-d">
+          <span class="k">Trends</span>
+          <h3>Build time and cache hits, by day.</h3>
+          <p>See whether the cache is paying off over weeks, with executor CPU and memory history sampled every minute for a week.</p>
+        </article>
+        <article class="card c-e">
+          <span class="k">Cache-only mode</span>
+          <h3>Just want a shared cache?</h3>
+          <p>Turn remote execution off on the Worker. It still stores blobs; actions run on your machine and share results through it.</p>
+        </article>
+
+        <article class="card c-f">
+          <span class="k">Workspaces</span>
+          <h3>Each workspace gets its own farm.</h3>
+          <p>Sign up, create workspaces, and provision an isolated Buildfarm for each, with its own ports, config and build history.</p>
+        </article>
+        <article class="card c-g">
+          <span class="k">Yours to run</span>
+          <h3>Nothing leaves the machine.</h3>
+          <p>Workspaces, builds and logs live in a MongoDB container beside the rest. Apache 2.0, so read it, fork it, run it.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="fit" style="padding-top:0">
+    <div class="wrap">
+      <div class="head">
+        <p class="label">Where Croft fits</p>
+        <h2>Not a smaller BuildBuddy. A place to learn your farm before you rent one.</h2>
+        <p>Managed platforms like BuildBuddy, EngFlow and NativeLink are built for fleets. Croft is built for the moment before that.</p>
+      </div>
+      <div class="fit">
+        <div class="card">
+          <span class="k">Reach for Croft when</span>
+          <ul>
+            <li>You're deciding what topology a Buildfarm needs before committing to a vendor.</li>
+            <li>You want remote caching or execution on a laptop or a single box.</li>
+            <li>Everything has to stay self-hosted, with no cloud account.</li>
+            <li>You want to see exactly what Bazel's Build Event Protocol carries.</li>
+          </ul>
+        </div>
+        <div class="card other">
+          <span class="k">Reach for a managed platform when</span>
+          <ul>
+            <li>You need workers spread across many hosts, or elastic scaling.</li>
+            <li>You need SSO, roles and audit for a whole organisation.</li>
+            <li>CI at scale needs a network-reachable endpoint, not localhost.</li>
+            <li>Compliance like SOC 2 is on the checklist.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="start" style="padding-top:0">
+    <div class="wrap qs">
+      <div>
+        <p class="label">Quickstart</p>
+        <h2>Running in a few minutes.</h2>
+        <p style="margin-top:16px;color:var(--ink-2);font-size:18px">Clone it, start the database, start three services, open the app. Full steps live in SETUP.md.</p>
+        <div class="reqs"><span>Node 20+</span><span>Docker</span><span>Python 3.11+</span><span>Bazel or Bazelisk</span></div>
+      </div>
+      <div>
+        <div class="code">
+          <button class="copy" type="button" id="copy" aria-label="Copy commands">Copy</button>
+<pre id="cmds"><span class="d"># one-time setup</span>
+git clone https://github.com/senthilaim/croft.git &amp;&amp; cd croft
+npm install
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+cp automation/.env.example automation/.env
+(cd automation &amp;&amp; python3 -m venv venv &amp;&amp; . venv/bin/activate \
+  &amp;&amp; pip install -r requirements.txt &amp;&amp; ./generate_protos.sh)
+
+<span class="d"># start</span>
+docker compose -f docker-compose.platform.yml up -d
+npm run dev:backend      <span class="d"># :4000</span>
+npm run dev:automation   <span class="d"># :9000 + BES :9095</span>
+npm run dev:frontend     <span class="d"># :3000</span></pre>
+        </div>
+        <p class="note">Then open <span class="mono">localhost:3000</span>, sign up, create a workspace and draw your farm. <a href="https://github.com/senthilaim/croft/blob/main/SETUP.md">Read SETUP.md →</a></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>© <span id="yr">2026</span> Croft · Apache 2.0 · Runs entirely on your own machine.</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/senthilaim/croft">GitHub</a>
+      <a href="https://github.com/senthilaim/croft/blob/main/SETUP.md">Setup guide</a>
+      <a href="https://github.com/senthilaim/croft/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var y = document.getElementById("yr");
+    if (y) y.textContent = new Date().getFullYear();
+    var btn = document.getElementById("copy");
+    var pre = document.getElementById("cmds");
+    if (!btn || !pre) return;
+    btn.addEventListener("click", function () {
+      var text = pre.innerText;
+      var done = function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1800); };
+      try {
+        navigator.clipboard.writeText(text).then(done, function () { select(); });
+      } catch (e) { select(); }
+      function select() {
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        btn.textContent = "Selected";
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>

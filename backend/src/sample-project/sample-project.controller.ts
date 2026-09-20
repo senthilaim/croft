@@ -1,5 +1,6 @@
 import { Controller, ConflictException, Get, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
+import type { ConnectConfig } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
@@ -16,6 +17,25 @@ export class SampleProjectController {
     private readonly provisioningService: ProvisioningService,
     private readonly buildfarmConfigService: BuildfarmConfigService,
   ) {}
+
+  @Get('connect')
+  async connect(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<ConnectConfig> {
+    const instance = await this.provisioningService.status(workspace.id);
+    if (!instance || instance.status !== 'running') {
+      throw new ConflictException('Submit setup for this workspace first');
+    }
+    const config = await this.buildfarmConfigService.getOrCreateDraft(workspace.id);
+    const workerNode = config.nodes.find((node) => node.type === 'worker');
+    const executionEnabled =
+      (workerNode?.config as { executionEnabled?: boolean } | undefined)?.executionEnabled ??
+      true;
+    return this.sampleProjectService.connectConfig(
+      workspace.id,
+      instance.ports.grpc,
+      executionEnabled,
+      instance.platform ?? null,
+    );
+  }
 
   @Get()
   async download(

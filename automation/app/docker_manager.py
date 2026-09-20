@@ -74,6 +74,29 @@ def _parse_size_to_mb(text: str) -> float:
         return 0.0
 
 
+WORKER_IMAGE = "bazelbuild/buildfarm-worker:2.17.1"  # keep in sync with templates/docker-compose.yml.j2
+_ARCH_TO_BAZEL_CPU = {"arm64": "aarch64", "amd64": "x86_64"}
+
+
+def worker_platform() -> dict | None:
+    """The OS/CPU the Buildfarm worker container actually runs, in Bazel's constraint vocabulary.
+
+    This is what a project's execution platform must match: Bazel resolves toolchains for the
+    *execution* platform, so a laptop-OS tool sent to this worker dies with "Exec format error".
+    """
+    result = subprocess.run(
+        ["docker", "image", "inspect", WORKER_IMAGE, "--format", "{{.Os}}/{{.Architecture}}"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        return None
+    os_name, _, arch = result.stdout.strip().partition("/")
+    cpu = _ARCH_TO_BAZEL_CPU.get(arch)
+    return {"os": os_name, "cpu": cpu} if os_name and cpu else None
+
+
 def role_from_container_name(name: str) -> str:
     for role in ("server", "worker", "redis"):
         if f"-{role}-" in name:

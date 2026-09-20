@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ZipArchive } from 'archiver';
+import type { ConnectConfig, WorkerPlatform } from '@croft/shared-types';
 
 export function buildModuleBazel(): string {
   // sh_test moved out of native builtins into rules_shell in modern Bazel -- needed for the
@@ -200,6 +201,42 @@ test --nocache_test_results
 `;
 }
 
+/** Configuration for an existing project (not the generated sample). The execution-platform lines
+ * are commented out on purpose: enabling them is only correct when every toolchain the project
+ * uses also ships a build for the worker's OS -- which is a change to that project, not to Croft. */
+export function buildConnectConfig(
+  workspaceId: string,
+  grpcPort: number,
+  besPort: number,
+  executionEnabled: boolean,
+  platform: WorkerPlatform | null,
+): ConnectConfig {
+  let bazelrc = buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled);
+  let platformsBuild: string | null = null;
+
+  if (executionEnabled && platform) {
+    bazelrc += `
+# --- Execution platform ---------------------------------------------------------------
+# Your Buildfarm worker runs ${platform.os}/${platform.cpu}. Bazel resolves toolchains for the
+# *execution* platform, so a tool built for your own machine's OS fails on the worker with
+# "Exec format error". Once the project's toolchains (compilers, SDKs) are available for
+# ${platform.os}/${platform.cpu}, add platforms/BUILD.bazel (below) and uncomment:
+# build --extra_execution_platforms=//platforms:croft_worker
+# build --platforms=//platforms:croft_worker
+`;
+    platformsBuild = `# platforms/BUILD.bazel -- matches the Croft worker (${platform.os}/${platform.cpu}).
+platform(
+    name = "croft_worker",
+    constraint_values = [
+        "@platforms//os:${platform.os}",
+        "@platforms//cpu:${platform.cpu}",
+    ],
+)
+`;
+  }
+  return { bazelrc, platformsBuild, platform };
+}
+
 export function buildReadme(workspaceName: string, grpcPort: number, executionEnabled: boolean): string {
   const buildRemotelySection = executionEnabled
     ? `## Build remotely
@@ -289,6 +326,16 @@ aren't cached (\`--nocache_test_results\`), so every run reports fresh, live dat
 @Injectable()
 export class SampleProjectService {
   constructor(private readonly configService: ConfigService) {}
+
+  connectConfig(
+    workspaceId: string,
+    grpcPort: number,
+    executionEnabled: boolean,
+    platform: WorkerPlatform | null,
+  ): ConnectConfig {
+    const besPort = Number(this.configService.get<string>('BES_PORT', '9095'));
+    return buildConnectConfig(workspaceId, grpcPort, besPort, executionEnabled, platform);
+  }
 
   createZip(
     workspaceId: string,

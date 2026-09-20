@@ -21,6 +21,9 @@ export default async function BuildDetailPage({
   const buildRes = await backendFetch(`/workspaces/${workspaceId}/builds/${buildId}`);
   if (!buildRes.ok) notFound();
   const build: Build = await buildRes.json();
+  const execFormatError = [build.errorMessage, ...build.actions.map((a) => a.stderr)].some(
+    (text) => !!text && /Exec format error|cannot execute binary file/i.test(text),
+  );
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -60,6 +63,24 @@ export default async function BuildDetailPage({
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400">
             <p className="mb-1 font-medium">Failure reason</p>
             <p className="whitespace-pre-wrap font-mono text-xs">{build.errorMessage}</p>
+          </div>
+        )}
+
+        {execFormatError && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="mb-1 font-medium">This looks like an execution-platform mismatch</p>
+            <p className="text-xs">
+              A tool built for a different OS was sent to your Linux worker (&ldquo;Exec format
+              error&rdquo;). Bazel picks toolchains for the <em>execution</em> platform, which
+              defaults to your own machine. See{" "}
+              <Link
+                href={`/workspaces/${workspaceId}/sample-project#your-project`}
+                className="font-medium underline"
+              >
+                Use your own project
+              </Link>{" "}
+              for the platform to declare and the toolchain change your project needs.
+            </p>
           </div>
         )}
 

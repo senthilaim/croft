@@ -51,6 +51,7 @@ def save_instance(
     container_ids: list[str],
     grpc_port: int | None = None,
     last_error: str | None = None,
+    platform: dict | None = None,
 ) -> dict:
     doc = {
         "workspaceId": workspace_id,
@@ -62,6 +63,8 @@ def save_instance(
     }
     if grpc_port is not None:
         doc["ports"] = {"grpc": grpc_port}
+    if platform is not None:
+        doc["platform"] = platform
 
     db.buildfarm_instances.find_one_and_update(
         {"workspaceId": workspace_id},
@@ -107,7 +110,12 @@ def provision(request: ProvisionRequest, db: Database = Depends(get_db)):
     status = summarize_status(ps_entries)
 
     return save_instance(
-        db, workspace_id, status=status, container_ids=container_ids, grpc_port=grpc_port
+        db,
+        workspace_id,
+        status=status,
+        container_ids=container_ids,
+        grpc_port=grpc_port,
+        platform=docker_manager.worker_platform(),
     )
 
 
@@ -203,7 +211,12 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
         live_status = summarize_status(ps_entries)
         grpc_port = existing["ports"]["grpc"] if existing.get("ports") else None
         return save_instance(
-            db, workspace_id, status=live_status, container_ids=container_ids, grpc_port=grpc_port
+            db,
+            workspace_id,
+            status=live_status,
+            container_ids=container_ids,
+            grpc_port=grpc_port,
+            platform=docker_manager.worker_platform(),
         )
 
     return existing

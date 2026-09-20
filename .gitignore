@@ -44,3 +44,6 @@ coverage/
 
 # downloaded sample project (generated per-workspace, has machine-local Bazel cache symlinks)
 buildfarm-sample-project*/
+
+# local sample project used for testing against Croft
+bazel-monorepo/
