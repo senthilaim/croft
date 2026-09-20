@@ -43,6 +43,17 @@ def compose_up(path: Path, project_name: str) -> None:
     _run_compose(path, project_name, "up", "-d", "--wait", "--wait-timeout", "180", timeout=240)
 
 
+def published_host_ports() -> set[int]:
+    """Host ports currently published by any running container on this Docker daemon."""
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--format", "{{.Ports}}"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    return {int(m) for m in re.findall(r":(\d+)->", result.stdout)}
+
+
 def compose_down(path: Path, project_name: str) -> None:
     _run_compose(path, project_name, "down", "-v", "--remove-orphans", timeout=120)
 

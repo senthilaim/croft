@@ -8,7 +8,7 @@ from .auth import require_internal_token
 from .db import get_db
 from .docker_manager import ComposeError
 from .models import ProvisionRequest, TeardownRequest
-from .port_allocator import allocate_port
+from .port_allocator import allocate_port, reallocate_port
 from .settings import settings
 from .topology import InvalidTopologyError, parse_topology
 
@@ -88,7 +88,7 @@ def provision(request: ProvisionRequest, db: Database = Depends(get_db)):
 
     workspace_id = request.workspaceId
     project_name = project_name_for(workspace_id)
-    grpc_port = allocate_port(db, workspace_id)
+    grpc_port = allocate_port(db, workspace_id, docker_manager.published_host_ports())
 
     save_instance(db, workspace_id, status="provisioning", container_ids=[], grpc_port=grpc_port)
 
@@ -97,7 +97,21 @@ def provision(request: ProvisionRequest, db: Database = Depends(get_db)):
     path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
 
     try:
-        docker_manager.compose_up(path, project_name)
+        for attempt in range(5):
+            try:
+                docker_manager.compose_up(path, project_name)
+                break
+            except ComposeError as e:
+                taken = "port is already allocated" in e.stderr or "address already in use" in e.stderr
+                if not taken or attempt == 4:
+                    raise
+                try:
+                    docker_manager.compose_down(path, project_name)
+                except ComposeError:
+                    pass
+                grpc_port = reallocate_port(db, workspace_id, docker_manager.published_host_ports())
+                compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port, config_yml)
+                path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
     except ComposeError as e:
         detail = f"{e}\n{e.stderr}".strip()
         instance = save_instance(
