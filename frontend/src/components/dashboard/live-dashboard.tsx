@@ -9,6 +9,7 @@ import { DurationChart } from "./duration-chart";
 import { StatusBadge } from "./status-badge";
 import { InfraPanel } from "./infra-panel";
 import { AnalyticsFilters } from "./analytics-filters";
+import { DemoBanner } from "./demo-banner";
 import { CachePanel, FailuresPanel, TargetsPanel } from "./analytics-panels";
 import {
   DEFAULT_FILTERS,
@@ -104,6 +105,12 @@ export function LiveDashboard({ workspaceId, initialBuilds, initialInfra }: Live
           Showing {filtered.length} of {builds.length} loaded invocations
         </span>
       </div>
+
+      <DemoBanner
+        workspaceId={workspaceId}
+        hasDemo={builds.some((b) => b.demo)}
+        hasBuilds={builds.length > 0}
+      />
 
       <AnalyticsFilters
         filters={filters}
@@ -220,7 +227,14 @@ export function LiveDashboard({ workspaceId, initialBuilds, initialInfra }: Live
                   key={build.id}
                   className="border-t border-black/5 text-zinc-700 dark:border-white/5 dark:text-zinc-300"
                 >
-                  <td className="px-4 py-2 font-mono text-xs">{build.command}</td>
+                  <td className="px-4 py-2 font-mono text-xs">
+                    {build.command}
+                    {build.demo && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                        Demo
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2">
                     <StatusBadge status={build.status} />
                   </td>

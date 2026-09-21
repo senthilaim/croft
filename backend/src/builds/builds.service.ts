@@ -211,7 +211,7 @@ export class BuildsService {
   }
 
   countSince(workspaceId: string, sinceIso: string): Promise<number> {
-    return this.buildModel.countDocuments({ workspaceId, startTime: { $gte: sinceIso } }).exec();
+    return this.buildModel.countDocuments({ workspaceId, demo: { $ne: true }, startTime: { $gte: sinceIso } }).exec();
   }
 
   findOne(workspaceId: string, buildId: string): Promise<BuildDocument | null> {
@@ -346,6 +346,7 @@ export function toBuildSummaryDto(doc: BuildDocument): BuildSummary {
     actionsCreated: doc.actionsCreated,
     actionsExecuted: doc.actionsExecuted,
     remoteCacheHits: doc.remoteCacheHits,
+    demo: doc.demo ?? false,
     failedActionCount: doc.actions.length,
     failure,
   };
@@ -374,6 +375,7 @@ export function toBuildDto(doc: BuildDocument, includeIssues = false): BuildDto 
       name: a.name,
       sizeBytes: a.sizeBytes,
     })),
+    demo: doc.demo ?? false,
     issues:
       includeIssues && doc.status === 'failure'
         ? diagnoseBuild([doc.consoleLog, doc.errorMessage, ...doc.actions.map((a) => a.stderr)])

@@ -45,6 +45,11 @@ export default async function BuildDetailPage({
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
               <StatusBadge status={build.status} />
+              {build.demo && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  Demo data
+                </span>
+              )}
               <span>{new Date(build.startTime).toLocaleString()}</span>
               <span>
                 {build.status === "running" ? "—" : `${(build.totalDurationMs / 1000).toFixed(1)}s`}

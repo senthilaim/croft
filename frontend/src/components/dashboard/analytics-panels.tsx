@@ -105,7 +105,10 @@ export function FailuresPanel({ builds, workspaceId }: { builds: BuildSummary[];
               {failed.slice(0, 25).map((b) => (
                 <tr key={b.id} className="border-t border-black/5 text-zinc-700 dark:border-white/5 dark:text-zinc-300">
                   <td className="whitespace-nowrap px-4 py-2 text-xs">{new Date(b.startTime).toLocaleString()}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{b.command}</td>
+                  <td className="px-4 py-2 font-mono text-xs">
+                    {b.command}
+                    {b.demo && <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">Demo</span>}
+                  </td>
                   <td className="px-4 py-2 text-xs">{b.failure?.title ?? "Unclassified"}</td>
                   <td className="max-w-md break-all px-4 py-2 font-mono text-xs text-zinc-500 dark:text-zinc-400">
                     {b.failure?.file ? `${b.failure.file}${b.failure.line ? `:${b.failure.line}` : ""}` : "—"}

@@ -184,6 +184,13 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    day, pricing or builds per month to see the effect. These are estimates from approximate list
    prices, not quotes.
 
+11. **Explore with a demo run** — before connecting anything, open **Analytics** and click **Run demo**
+   (no running Buildfarm needed). It generates about 40 sample builds over two weeks — a warming
+   remote cache, four kinds of failure with located fixes, and a flaky test — so the dashboard,
+   Failures/Targets/Remote cache tabs, Test grid and Trends all have data. Everything is marked
+   *Demo*; click **Clear demo data** to remove it. Demo builds are never counted in the Cost page's
+   measured builds per month.
+
 ## 5. Verify every feature (acceptance checklist)
 
 Work through this top to bottom after a fresh install. Each row says what to do and what you must
@@ -215,8 +222,9 @@ you connect. In Docker mode replace `localhost:9000` checks with `docker compose
 | 20 | Your own project | Follow README "Connecting your own project"; open the sample-project page's **Use your own project** block | Copy-ready `.bazelrc` and platform snippet shown; a Linux-incompatible toolchain shows the Exec-format-error hint on the build page |
 | 21 | Connect a repo | Open the **Connect** tab, set the host, pick a CI provider, copy the `.bazelrc` block into a project and run `bazel build //... --config=croft` | Files are generated for the chosen provider; warnings appear for `localhost`/hosted runners; the last step turns green ("Connected") when the build arrives |
 | 22 | Cost estimate | Open the **Cost** tab for a workspace with a saved design; change hours per day to 8 and pricing to Spot | Requirements match the design (vCPU/RAM/storage); the chart and table cover Docker, AWS, GCP, Azure and on-prem; the numbers drop with fewer hours and with Spot; the page warns that these are estimates |
-| 23 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
-| 24 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
+| 23 | Demo run | On a workspace with no builds, open **Analytics** and click **Run demo**; open a failed row, the Test grid and Trends; then **Clear demo data** | About 44 invocations appear live (rows marked *Demo*), failures show a located fix, the Test grid flags a flaky test, Trends shows a cache warm-up; clearing returns the empty state |
+| 24 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
+| 25 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
 
 **Quick automated smoke (optional):** `docker compose build && docker compose up -d --wait` then
 `curl -fsS http://localhost:3000/signup >/dev/null && echo OK` confirms the packaged stack starts.

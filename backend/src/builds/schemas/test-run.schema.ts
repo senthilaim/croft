@@ -37,6 +37,9 @@ export class TestRun {
 
   @Prop({ required: true })
   startTime!: string;
+
+  @Prop({ default: false })
+  demo!: boolean;
 }
 
 export const TestRunSchema = SchemaFactory.createForClass(TestRun);

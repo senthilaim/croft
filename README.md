@@ -270,6 +270,17 @@ Known limits: the Buildfarm and build-event endpoints have no authentication yet
 private network or VPN (the page warns about this, and about `localhost` and GitHub-hosted runners,
 which cannot reach a private Croft).
 
+## Demo run
+
+**Run demo** on the Analytics page seeds about 44 sample invocations (14 days, warming cache, four
+failure kinds, a flaky `//web:e2e_test`) plus their test runs, so every view can be explored before a
+real repo is connected. `backend/src/demo/demo-data.ts` generates them deterministically; they are stored
+as ordinary builds and test runs flagged `demo: true` (so all analytics, the WebSocket push and the failure
+diagnosis treat them like real data), shown with a *Demo* badge, replaced on every re-run, and removed with
+**Clear demo data** (`POST/DELETE /workspaces/:id/demo`). They are excluded from the Cost page's measured
+builds per month. Limits: the Trends and Test grid pages show demo data without a badge, and executor
+utilisation has no demo series because it comes from real container samples.
+
 ## Cost estimate
 
 The workspace's **Cost** tab (`/workspaces/<id>/cost`, API `GET /workspaces/:id/cost`) estimates the

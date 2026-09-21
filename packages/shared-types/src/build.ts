@@ -87,6 +87,8 @@ export interface Build {
   artifacts: BuildArtifact[];
   /** Located root-cause errors with fix suggestions; empty for successful builds. */
   issues: BuildIssue[];
+  /** True for sample data from the demo run rather than a real invocation. */
+  demo: boolean;
 }
 
 /** Root cause of a failed build, shortened from its diagnosis for lists and failure analytics. */
@@ -104,6 +106,7 @@ export type BuildSummary = Omit<
   Build,
   "actions" | "waterfall" | "consoleLog" | "artifacts" | "issues"
 > & {
+  demo: boolean;
   failedActionCount: number;
   failure: BuildFailureSummary | null;
 };
