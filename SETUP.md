@@ -177,6 +177,13 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    turns green when the first build arrives. Keep the Buildfarm ports on a private network: they have
    no authentication yet.
 
+10. **Estimate what the infrastructure costs** — open the workspace's **Cost** tab
+   (`/workspaces/<id>/cost`). It reads your saved Buildfarm design (so it works before you provision
+   anything) and compares monthly cost on your own machine, AWS, Google Cloud, Azure and your own
+   servers, with on-demand and spot prices and, once builds exist, a cost per build. Change hours per
+   day, pricing or builds per month to see the effect. These are estimates from approximate list
+   prices, not quotes.
+
 ## 5. Verify every feature (acceptance checklist)
 
 Work through this top to bottom after a fresh install. Each row says what to do and what you must
@@ -207,8 +214,9 @@ you connect. In Docker mode replace `localhost:9000` checks with `docker compose
 | 19 | Cache-only mode | Teardown, designer -> **Cache only**, Submit, build twice | Builds succeed and the second run shows cache hits (executed locally, cached on the Worker) |
 | 20 | Your own project | Follow README "Connecting your own project"; open the sample-project page's **Use your own project** block | Copy-ready `.bazelrc` and platform snippet shown; a Linux-incompatible toolchain shows the Exec-format-error hint on the build page |
 | 21 | Connect a repo | Open the **Connect** tab, set the host, pick a CI provider, copy the `.bazelrc` block into a project and run `bazel build //... --config=croft` | Files are generated for the chosen provider; warnings appear for `localhost`/hosted runners; the last step turns green ("Connected") when the build arrives |
-| 22 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
-| 23 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
+| 22 | Cost estimate | Open the **Cost** tab for a workspace with a saved design; change hours per day to 8 and pricing to Spot | Requirements match the design (vCPU/RAM/storage); the chart and table cover Docker, AWS, GCP, Azure and on-prem; the numbers drop with fewer hours and with Spot; the page warns that these are estimates |
+| 23 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
+| 24 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
 
 **Quick automated smoke (optional):** `docker compose build && docker compose up -d --wait` then
 `curl -fsS http://localhost:3000/signup >/dev/null && echo OK` confirms the packaged stack starts.

@@ -270,6 +270,20 @@ Known limits: the Buildfarm and build-event endpoints have no authentication yet
 private network or VPN (the page warns about this, and about `localhost` and GitHub-hosted runners,
 which cannot reach a private Croft).
 
+## Cost estimate
+
+The workspace's **Cost** tab (`/workspaces/<id>/cost`, API `GET /workspaces/:id/cost`) estimates the
+monthly cost of the *saved design* on your own machine, AWS, Google Cloud, Azure and your own servers.
+`backend/src/cost/cost-estimator.ts` (unit-tested) sums vCPU/RAM across every replica, adds 15% headroom,
+and picks the cheapest instance size and count from a small built-in catalogue of approximate public
+on-demand list prices (one region per cloud, dated `PRICES_AS_OF`), plus storage from cache nodes (minimum
+50 GB). It also shows a spot/preemptible figure, scales compute by hours per day, and divides by builds
+per month (measured from the workspace's last 30 days, or your own number) for a cost per build. On-prem
+uses a placeholder $/vCPU-hour you should replace with your internal rate.
+
+These are for comparing options, not quotes: prices drift and vary by region; egress, load balancers,
+snapshots, support and committed-use discounts are excluded. Update the catalogue when prices change.
+
 ## Connecting your own project (execution platforms)
 
 The generated sample project is genrules and shell tests, which run anywhere. Real projects with

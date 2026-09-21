@@ -87,6 +87,15 @@ export default async function WorkspaceDetailPage({
               Generate CI files for your existing project
             </span>
           </Link>
+          <Link
+            href={`/workspaces/${workspace.id}/cost`}
+            className="flex flex-col gap-1 rounded-xl border border-black/10 bg-white p-4 transition-colors hover:border-black/20 hover:bg-black/[.02] dark:border-white/10 dark:bg-zinc-900 dark:hover:border-white/20 dark:hover:bg-white/[.03]"
+          >
+            <span className="font-medium text-black dark:text-zinc-50">Cost estimate</span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              What this farm costs on AWS, GCP, Azure or your servers
+            </span>
+          </Link>
         </div>
       </div>
     </div>

@@ -210,6 +210,10 @@ export class BuildsService {
       .exec();
   }
 
+  countSince(workspaceId: string, sinceIso: string): Promise<number> {
+    return this.buildModel.countDocuments({ workspaceId, startTime: { $gte: sinceIso } }).exec();
+  }
+
   findOne(workspaceId: string, buildId: string): Promise<BuildDocument | null> {
     return this.buildModel.findOne({ _id: buildId, workspaceId }).exec();
   }
