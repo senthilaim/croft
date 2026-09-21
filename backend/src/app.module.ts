@@ -11,6 +11,7 @@ import { ProvisioningModule } from './provisioning/provisioning.module.js';
 import { SampleProjectModule } from './sample-project/sample-project.module.js';
 import { BuildsModule } from './builds/builds.module.js';
 import { LiveBusModule } from './live/live-bus.js';
+import { FilesModule } from './files/files.module.js';
 import { DemoModule } from './demo/demo.module.js';
 import { CostModule } from './cost/cost.module.js';
 import { LiveModule } from './live/live.module.js';
@@ -35,6 +36,7 @@ import { LiveModule } from './live/live.module.js';
     LiveModule,
     CostModule,
     DemoModule,
+    FilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

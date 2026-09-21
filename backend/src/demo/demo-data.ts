@@ -87,7 +87,7 @@ const FAILURES: FailureScenario[] = [
   {
     log: [
       `ERROR: ${ROOT}/lib/BUILD.bazel:8:11: Compiling lib/core.cc failed: (Exit 1): clang failed: error executing CppCompile command`,
-      "lib/core.cc:42:5: error: use of undeclared identifier 'parse_config'",
+      `${ROOT}/lib/core.cc:42:5: error: use of undeclared identifier 'parse_config'`,
       '  parse_config(argc, argv);',
       '  ^',
       'FAILED: Build did NOT complete successfully',
@@ -100,7 +100,7 @@ const FAILURES: FailureScenario[] = [
       commandLine: ['clang', '-c', 'lib/core.cc', '-o', 'bazel-out/k8-fastbuild/bin/lib/_objs/core/core.o'],
       primaryOutputPath: 'bazel-out/k8-fastbuild/bin/lib/_objs/core/core.o',
       stdout: null,
-      stderr: "lib/core.cc:42:5: error: use of undeclared identifier 'parse_config'\n  parse_config(argc, argv);\n  ^",
+      stderr: `${ROOT}/lib/core.cc:42:5: error: use of undeclared identifier 'parse_config'\n  parse_config(argc, argv);\n  ^`,
     },
     durationMs: [4000, 12000],
   },

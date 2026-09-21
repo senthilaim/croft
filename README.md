@@ -281,6 +281,17 @@ diagnosis treat them like real data), shown with a *Demo* badge, replaced on eve
 builds per month. Limits: the Trends and Test grid pages show demo data without a badge, and executor
 utilisation has no demo series because it comes from real container samples.
 
+## File viewer
+
+The **Files** tab (`/workspaces/<id>/files`, API `GET /workspaces/:id/files` and `.../files/content`) is a
+read-only viewer for files Croft itself generated: the deployed `config.yml`/`docker-compose.yml`
+(read by the automation service from the workspace's runtime directory), the sample project, and the
+demo-shop sources when the demo is loaded. Failures in the demo link straight to the offending line.
+Every group is assembled in memory from fixed generators or an allow-list of names and looked up by
+exact match, so no request-supplied path ever reaches the filesystem (traversal attempts return 404).
+It does not show your own repository - Croft never receives it - so a real failure's file:line stays a
+copy-to-editor location. Plain text with line numbers; no syntax highlighting or editing.
+
 ## Cost estimate
 
 The workspace's **Cost** tab (`/workspaces/<id>/cost`, API `GET /workspaces/:id/cost`) estimates the

@@ -56,6 +56,17 @@ export class ProvisioningService {
     return (await res.json()) as BuildfarmInstance;
   }
 
+  async deployedFiles(workspaceId: string): Promise<Array<{ name: string; content: string }>> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/files/${workspaceId}`, { headers: this.headers });
+    } catch {
+      return [];
+    }
+    if (!res.ok) return [];
+    return ((await res.json()) as { files: Array<{ name: string; content: string }> }).files;
+  }
+
   async infra(workspaceId: string): Promise<InfraStats> {
     let res: Response;
     try {

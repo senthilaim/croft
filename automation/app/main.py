@@ -1,4 +1,7 @@
+import re
 from datetime import datetime, timedelta, timezone
+
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 from pymongo.database import Database
@@ -234,6 +237,23 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
         )
 
     return existing
+
+
+_DEPLOYED_FILE_NAMES = ("config.yml", "docker-compose.yml")
+
+
+@app.get("/files/{workspace_id}", dependencies=[Depends(require_internal_token)])
+def deployed_files(workspace_id: str):
+    """The Buildfarm config and compose file Croft generated for a workspace (read-only view)."""
+    if not re.fullmatch(r"[0-9a-f]{24}", workspace_id):
+        raise HTTPException(status_code=400, detail="Invalid workspace id")
+    base = Path(__file__).resolve().parent.parent / settings.runtime_dir / f"workspace-{workspace_id}"
+    files = []
+    for name in _DEPLOYED_FILE_NAMES:
+        candidate = base / name
+        if candidate.is_file():
+            files.append({"name": name, "content": candidate.read_text()})
+    return {"files": files}
 
 
 @app.get("/artifacts", dependencies=[Depends(require_internal_token)])

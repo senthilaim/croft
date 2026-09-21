@@ -7,7 +7,16 @@ function locationOf(issue: BuildIssue): string | null {
   return parts.join(":");
 }
 
-export function BuildIssues({ issues }: { issues: BuildIssue[] }) {
+const VIEWABLE_ROOT = "/workspace/demo-shop/";
+
+function viewerHref(workspaceId: string, issue: BuildIssue): string | null {
+  if (!issue.file?.startsWith(VIEWABLE_ROOT)) return null;
+  const params = new URLSearchParams({ group: "demo", path: `demo-shop/${issue.file.slice(VIEWABLE_ROOT.length)}` });
+  if (issue.line) params.set("line", String(issue.line));
+  return `/workspaces/${workspaceId}/files?${params}`;
+}
+
+export function BuildIssues({ issues, workspaceId }: { issues: BuildIssue[]; workspaceId: string }) {
   if (issues.length === 0) return null;
 
   return (
@@ -40,6 +49,14 @@ export function BuildIssues({ issues }: { issues: BuildIssue[] }) {
                   <code className="min-w-0 flex-1 break-all font-mono text-xs text-zinc-900 dark:text-zinc-50">
                     {location}
                   </code>
+                  {viewerHref(workspaceId, issue) && (
+                    <a
+                      href={viewerHref(workspaceId, issue)!}
+                      className="shrink-0 rounded-md border border-black/10 px-2 py-0.5 text-xs font-medium text-brand transition-colors hover:bg-black/[.04] dark:border-white/10 dark:text-zinc-100 dark:hover:bg-white/[.06]"
+                    >
+                      Open in viewer
+                    </a>
+                  )}
                   <CopyLocation text={location} />
                 </div>
               )}

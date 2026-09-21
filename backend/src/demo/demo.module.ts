@@ -18,5 +18,6 @@ import { DemoService } from './demo.service.js';
   ],
   controllers: [DemoController],
   providers: [DemoService],
+  exports: [DemoService],
 })
 export class DemoModule {}

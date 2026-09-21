@@ -65,7 +65,7 @@ export default async function BuildDetailPage({
           )}
         </div>
 
-        <BuildIssues issues={build.issues ?? []} />
+        <BuildIssues issues={build.issues ?? []} workspaceId={workspaceId} />
 
         {build.errorMessage && (build.issues ?? []).length === 0 && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400">
