@@ -170,6 +170,13 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    the browser, plus a timing waterfall of every action Bazel ran during that build (not just the
    failed ones) — parsed straight from Bazel's own JSON trace profile.
 
+9. **Connect your own repo's CI** — open the workspace's **Connect** tab
+   (`/workspaces/<id>/connect`). Enter the address your CI runners use to reach this machine, pick
+   GitHub Actions / GitLab CI / Jenkins, and copy the generated `.bazelrc` block and CI file into
+   your repository. Run `bazel build //... --config=croft` (or let CI run) and the page's last step
+   turns green when the first build arrives. Keep the Buildfarm ports on a private network: they have
+   no authentication yet.
+
 ## 5. Verify every feature (acceptance checklist)
 
 Work through this top to bottom after a fresh install. Each row says what to do and what you must
@@ -183,29 +190,36 @@ you connect. In Docker mode replace `localhost:9000` checks with `docker compose
 | 2 | BES port | `lsof -nP -iTCP:9095 -sTCP:LISTEN` | Automation is listening on 9095 |
 | 3 | Sign up / sign in | Create an account at `/signup`, sign out, sign back in at `/signin` | You land on `/workspaces` both times |
 | 4 | Workspaces | Create a workspace | It appears in the list and opens |
-| 5 | Designer | Click **Full RBE**, edit the Worker's memory, **Save configuration**, reload | Nodes, edges and your edit persist |
-| 6 | Provision | **Submit Setup** | Status becomes **running** with a `grpc://localhost:<port>` endpoint; `docker ps --filter name=workspace-` lists server, worker, redis |
-| 7 | Remote execution | In the sample project: `bazel build //:hello && cat bazel-bin/hello.txt` | Prints `Hello from Bazel Buildfarm!`; Bazel says `1 remote` process |
-| 8 | Live dashboard | Keep `/workspaces/<id>/dashboard` open during a build | Build appears as `running`, then `success` with duration; CPU/memory bars move |
-| 9 | Cache hits | `bazel clean && bazel build //:good_targets` twice | Second run shows remote cache hits in the build row |
-| 10 | Failure reasons | `bazel build //:broken_action` and `//:broken_dependency` | Two `failed` rows, each with a different error text in **Reason** |
-| 11 | Build detail | **View details** on a build | Action list, timing waterfall (many spans) and console log render |
-| 12 | Logs and artifacts | On the failed build, download an action's stdout/stderr; on `//:hello`, download the output artifact | Files download with real content (`Hello from Bazel Buildfarm!` for the artifact) |
-| 13 | Shareable URL | Copy the build URL, open it in a private window after signing in | Same build detail loads at `/workspaces/<id>/builds/<buildId>` |
-| 14 | Test grid | `bazel test //:stable_test //:always_fails_test`, then `//:flaky_test` 5-6 times; open `/dashboard/tests` | Stable passes, always-fails fails, flaky test is flagged flaky |
-| 15 | Trends | Open `/dashboard/trends`; try 24h/7d/30d | Build-time and cache-hit charts populated from your builds; executor utilisation visible |
-| 16 | Cache-only mode | Teardown, designer -> **Cache only**, Submit, build twice | Builds succeed and the second run shows cache hits (executed locally, cached on the Worker) |
-| 17 | Your own project | Follow README "Connecting your own project"; open the sample-project page's **Use your own project** block | Copy-ready `.bazelrc` and platform snippet shown; a Linux-incompatible toolchain shows the Exec-format-error hint on the build page |
-| 18 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
-| 19 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
+| 5 | Theme | Click the theme button in the header (System -> Light -> Dark), reload | Colours switch immediately with no flash on reload, and the choice persists |
+| 6 | Designer | Click **Full RBE**, edit the Worker's memory, **Save configuration**, reload | Nodes, edges and your edit persist |
+| 7 | Provision | **Submit Setup** | Status becomes **running** with a `grpc://localhost:<port>` endpoint; `docker ps --filter name=workspace-` lists server, worker, redis |
+| 8 | Remote execution | In the sample project: `bazel build //:hello && cat bazel-bin/hello.txt` | Prints `Hello from Bazel Buildfarm!`; Bazel says `1 remote` process |
+| 9 | Live dashboard | Keep `/workspaces/<id>/dashboard` open during a build | Status line reads "Live — pushed over WebSocket"; the build appears as `running`, then `success` with duration, with no page refresh; CPU/memory bars move |
+| 10 | Cache hits | `bazel clean && bazel build //:good_targets` twice | Second run shows remote cache hits in the build row |
+| 11 | Failure reasons | `bazel build //:broken_action` and `//:broken_dependency` | Two `failed` rows, each with a different error text in **Reason** |
+| 12 | Failure diagnosis | Add a `sh_test` without a `load()` to a package (or reference a missing target), run `bazel build //...`, open **View details** | A **What went wrong** card shows the file:line:column, Bazel's message and a **Recommended fix**; the summary line "Package ... contains errors" is not listed |
+| 13 | Build detail | **View details** on a build | Action list, timing waterfall (many spans) and console log render |
+| 14 | Logs and artifacts | On the failed build, download an action's stdout/stderr; on `//:hello`, download the output artifact | Files download with real content (`Hello from Bazel Buildfarm!` for the artifact) |
+| 15 | Shareable URL | Copy the build URL, open it in a private window after signing in | Same build detail loads at `/workspaces/<id>/builds/<buildId>` |
+| 16 | Test grid | `bazel test //:stable_test //:always_fails_test`, then `//:flaky_test` 5-6 times; open `/dashboard/tests` | Stable passes, always-fails fails, flaky test is flagged flaky |
+| 17 | Trends | Open `/dashboard/trends`; try 24h/7d/30d | Build-time and cache-hit charts populated from your builds; executor utilisation visible |
+| 18 | Analytics filters and tabs | On Analytics, tick **Failed**, type a target pattern, open the Failures / Targets / Remote cache tabs, then **Clear all**; set Updates to **Paused** | Tiles and tabs follow the filters (counts change), Failures groups causes with locations, Clear all restores everything, Paused freezes the page |
+| 19 | Cache-only mode | Teardown, designer -> **Cache only**, Submit, build twice | Builds succeed and the second run shows cache hits (executed locally, cached on the Worker) |
+| 20 | Your own project | Follow README "Connecting your own project"; open the sample-project page's **Use your own project** block | Copy-ready `.bazelrc` and platform snippet shown; a Linux-incompatible toolchain shows the Exec-format-error hint on the build page |
+| 21 | Connect a repo | Open the **Connect** tab, set the host, pick a CI provider, copy the `.bazelrc` block into a project and run `bazel build //... --config=croft` | Files are generated for the chosen provider; warnings appear for `localhost`/hosted runners; the last step turns green ("Connected") when the build arrives |
+| 22 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
+| 23 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
 
 **Quick automated smoke (optional):** `docker compose build && docker compose up -d --wait` then
 `curl -fsS http://localhost:3000/signup >/dev/null && echo OK` confirms the packaged stack starts.
 
-**If it fails:** row 1-2 -> Troubleshooting (Mongo / ports / proto stubs); 6 -> Docker running and
-image pull finished; 7 -> `.bazelrc` port matches the workspace; 8-11 -> `--bes_backend` and
-`x-workspace-id` in `.bazelrc`, re-download the sample project; 12 in Docker mode -> check
-`docker compose logs automation` for CAS read errors.
+**If it fails:** rows 1-2 -> Troubleshooting (Mongo / ports / proto stubs); 7 -> Docker running and
+image pull finished (a busy host port is skipped automatically); 8 -> `.bazelrc` port matches the
+workspace; 9-13 -> `--bes_backend` and `x-workspace-id` in `.bazelrc`, re-download the sample
+project; 9 showing "Reconnecting" -> the WebSocket is blocked (proxy/backend restart), the page falls
+back to polling; 12 shows nothing on old builds -> only failures recorded after the diagnosis feature
+have a console log; 14 in Docker mode -> check `docker compose logs automation` for CAS read errors;
+21 stays "Waiting" -> the runner cannot reach the host/ports, or `--config=croft` was not passed.
 
 ## 6. Stop everything
 

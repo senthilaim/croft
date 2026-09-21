@@ -24,6 +24,25 @@ export interface ConnectConfig {
   platform: WorkerPlatform | null;
 }
 
+export type CiProvider = "github" | "gitlab" | "jenkins";
+
+/** One file to add to the user's repository. */
+export interface ConnectKitFile {
+  path: string;
+  description: string;
+  content: string;
+}
+
+/** Everything needed to connect an existing repo's CI to a workspace's Buildfarm. */
+export interface ConnectKit {
+  host: string;
+  provider: CiProvider;
+  files: ConnectKitFile[];
+  warnings: string[];
+  /** Local command that proves the connection (also streams to the dashboard). */
+  verifyCommand: string;
+}
+
 export interface BuildfarmInstance {
   workspaceId: string;
   composeProjectName: string;

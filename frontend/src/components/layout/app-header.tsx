@@ -38,6 +38,7 @@ function tabsFor(pathname: string): Tab[] {
       href: `${base}/dashboard`,
       active: (p) => p === `${base}/dashboard` || p.startsWith(`${base}/builds`),
     },
+    { label: "Connect", href: `${base}/connect`, active: (p) => p.startsWith(`${base}/connect`) },
     { label: "Tests", href: `${base}/dashboard/tests`, active: (p) => p.startsWith(`${base}/dashboard/tests`) },
     { label: "Trends", href: `${base}/dashboard/trends`, active: (p) => p.startsWith(`${base}/dashboard/trends`) },
   ];
