@@ -40,6 +40,7 @@ if [ ! -f .env ]; then
     echo "JWT_ACCESS_SECRET=$(openssl rand -hex 32)"
     echo "JWT_REFRESH_SECRET=$(openssl rand -hex 32)"
     echo "AUTOMATION_INTERNAL_TOKEN=$(openssl rand -hex 32)"
+    echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)"
   } > .env
 else
   say "Keeping existing .env"

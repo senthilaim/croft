@@ -306,6 +306,43 @@ uses a placeholder $/vCPU-hour you should replace with your internal rate.
 These are for comparing options, not quotes: prices drift and vary by region; egress, load balancers,
 snapshots, support and committed-use discounts are excluded. Update the catalogue when prices change.
 
+## Analyze a repository (GitHub)
+
+The **Analyze** tab (`/workspaces/<id>/analyze`) is the most differentiated feature in Croft: point
+it at a GitHub repository and it tells you what that repo actually needs, instead of you guessing
+node counts in the designer.
+
+**How it works.** You paste a read-only, repo-scoped GitHub Personal Access Token (not an OAuth App
+login -- Croft is self-hosted, often on localhost or a private network, and GitHub OAuth Apps need an
+exact-match registered callback URL per install, which is far more friction than a pasted PAT). Croft
+clones the repo into a fresh, hardened, network-isolated Docker container (`automation/analysis-runner/`,
+launched by `automation/app/repo_analysis.py`) and runs
+`bazel query --output=streamed_jsonproto --keep_going 'kind(rule, //...)'`. The container is `--rm`,
+non-root, `--cap-drop=ALL`, `--read-only` with sized tmpfs mounts, has its own per-job Docker network
+(no access to the Buildfarm/DB containers), resource-limited (`--cpus`, `--memory`, `--pids-limit`), and
+wrapped in a wall-clock timeout that force-removes it if exceeded. The GitHub token is unset from the
+container's environment immediately after cloning, before any `bazel` invocation runs -- Bazel's
+`MODULE.bazel`/`WORKSPACE` resolution executes the repo's own Starlark, so the token must not still be
+live once that untrusted code starts running.
+
+**This is Docker-level hardening, not a full security sandbox.** It meaningfully reduces blast radius
+(no socket access, no lateral movement, no privilege escalation, capped resources) but does not protect
+against a kernel/container-escape exploit -- that needs gVisor/Firecracker, out of scope for now. Only
+connect repositories you trust; the UI says so at the token field.
+
+**What you get:** a target-kind histogram (`bzl_library`, `cc_test`, `genrule`, ...), the external
+dependency list, a package-level dependency graph (direct edges only, collapsed to package/external-repo
+granularity, rendered with the same `@xyflow/react` library as the Buildfarm designer, capped to the
+300 most-connected packages on very large repos), and a rough suggested Buildfarm topology
+(`backend/src/repo-analysis/infra-heuristic.ts`) that feeds straight into the existing cost estimator.
+
+The connected repo's PAT is this app's first secret stored in the database -- encrypted with AES-256-GCM
+(`backend/src/crypto/token-cipher.service.ts`), keyed by a required `TOKEN_ENCRYPTION_KEY` env var the
+backend refuses to boot without. It's decrypted only for the analyze call to automation, never logged,
+never returned in any API response (only the token's last 4 characters are). Analysis progress is pushed
+live over the same WebSocket gateway as the dashboard (`repoAnalysis` event); there is no history, a
+re-run replaces the previous result entirely. GitLab, Bitbucket and Perforce are not supported yet.
+
 ## Connecting your own project (execution platforms)
 
 The generated sample project is genrules and shell tests, which run anywhere. Real projects with

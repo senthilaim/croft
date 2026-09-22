@@ -50,3 +50,6 @@ bazel-monorepo/
 
 # proto sources live under a "build" directory
 !automation/protos/**/build/
+
+# private business material (interview guides, plans) - not published with the open-source repo
+business/

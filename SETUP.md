@@ -197,6 +197,13 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    use **Open in viewer** to jump to the failing file and line. Your own repository is not uploaded; it
    stays in your editor.
 
+13. **Analyze a real repository** — open the workspace's **Analyze** tab, paste a read-only GitHub
+   personal access token and a repo URL, then click **Analyze repository**. Croft clones the repo
+   into an isolated sandbox and runs `bazel query`; watch the status flip live from "Analyzing..."
+   to results (no refresh needed) showing a target-kind histogram, external dependencies, a package
+   dependency graph, and a suggested Buildfarm sizing linking to the Cost page. Only connect a repo
+   you trust — it runs the repo's own build scripts, just in a hardened container.
+
 ## 5. Verify every feature (acceptance checklist)
 
 Work through this top to bottom after a fresh install. Each row says what to do and what you must
@@ -230,8 +237,9 @@ you connect. In Docker mode replace `localhost:9000` checks with `docker compose
 | 22 | Cost estimate | Open the **Cost** tab for a workspace with a saved design; change hours per day to 8 and pricing to Spot | Requirements match the design (vCPU/RAM/storage); the chart and table cover Docker, AWS, GCP, Azure and on-prem; the numbers drop with fewer hours and with Spot; the page warns that these are estimates |
 | 23 | Demo run | On a workspace with no builds, open **Analytics** and click **Run demo**; open a failed row, the Test grid and Trends; then **Clear demo data** | About 44 invocations appear live (rows marked *Demo*), failures show a located fix, the Test grid flags a flaky test, Trends shows a cache warm-up; clearing returns the empty state |
 | 24 | File viewer | Open the **Files** tab; with the demo loaded, open a failed build and click **Open in viewer** | Deployed config, sample project and demo files list and open read-only with line numbers; the viewer opens on the failing line, highlighted; Copy and Download work |
-| 25 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
-| 26 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
+| 25 | Repo analysis | On the **Analyze** tab, connect a small public GitHub repo with a read-only PAT and click **Analyze repository** | Status flips live from running to succeeded with no refresh; histogram, external deps, package graph and a suggested worker count all show real data; Disconnect returns to the empty connect step |
+| 26 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
+| 27 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
 
 **Quick automated smoke (optional):** `docker compose build && docker compose up -d --wait` then
 `curl -fsS http://localhost:3000/signup >/dev/null && echo OK` confirms the packaged stack starts.

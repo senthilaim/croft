@@ -14,6 +14,14 @@ export class LiveBus {
   onBuildsChanged(listener: (workspaceId: string) => void): void {
     this.emitter.on('builds', listener);
   }
+
+  repoAnalysisChanged(workspaceId: string): void {
+    this.emitter.emit('repoAnalysis', workspaceId);
+  }
+
+  onRepoAnalysisChanged(listener: (workspaceId: string) => void): void {
+    this.emitter.on('repoAnalysis', listener);
+  }
 }
 
 @Global()

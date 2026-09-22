@@ -31,3 +31,10 @@ class ProvisionRequest(BaseModel):
 
 class TeardownRequest(BaseModel):
     workspaceId: str
+
+
+class AnalyzeRepoRequest(BaseModel):
+    workspaceId: str
+    repoUrl: str
+    token: str
+    branch: str

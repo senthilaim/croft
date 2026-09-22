@@ -11,6 +11,8 @@ import { ProvisioningModule } from './provisioning/provisioning.module.js';
 import { SampleProjectModule } from './sample-project/sample-project.module.js';
 import { BuildsModule } from './builds/builds.module.js';
 import { LiveBusModule } from './live/live-bus.js';
+import { RepoAnalysisModule } from './repo-analysis/repo-analysis.module.js';
+import { TokenCipherModule } from './crypto/token-cipher.module.js';
 import { FilesModule } from './files/files.module.js';
 import { DemoModule } from './demo/demo.module.js';
 import { CostModule } from './cost/cost.module.js';
@@ -37,6 +39,8 @@ import { LiveModule } from './live/live.module.js';
     CostModule,
     DemoModule,
     FilesModule,
+    TokenCipherModule,
+    RepoAnalysisModule,
   ],
   controllers: [AppController],
   providers: [AppService],

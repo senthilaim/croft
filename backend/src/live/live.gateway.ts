@@ -14,6 +14,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { BuildsService, toBuildSummaryDto } from '../builds/builds.service.js';
 import { ProvisioningService } from '../provisioning/provisioning.service.js';
+import { RepoConnectionService } from '../repo-analysis/repo-connection.service.js';
 import { WorkspacesService } from '../workspaces/workspaces.service.js';
 import { LiveBus } from './live-bus.js';
 
@@ -62,9 +63,11 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     private readonly workspacesService: WorkspacesService,
     private readonly buildsService: BuildsService,
     private readonly provisioningService: ProvisioningService,
+    private readonly repoConnectionService: RepoConnectionService,
     bus: LiveBus,
   ) {
     bus.onBuildsChanged((workspaceId) => this.scheduleBuilds(workspaceId));
+    bus.onRepoAnalysisChanged((workspaceId) => void this.emitRepoAnalysis(workspaceId));
   }
 
   afterInit(): void {
@@ -110,7 +113,11 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     data.workspaces.add(workspaceId);
 
     // Snapshot immediately so a (re)connecting client is current without any HTTP round trip.
-    await Promise.all([this.emitBuilds(workspaceId, client), this.emitInfra(workspaceId, client)]);
+    await Promise.all([
+      this.emitBuilds(workspaceId, client),
+      this.emitInfra(workspaceId, client),
+      this.emitRepoAnalysis(workspaceId, client),
+    ]);
     this.startInfra(workspaceId);
     return { ok: true };
   }
@@ -161,6 +168,16 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       // automation briefly unreachable: keep the last value on screen, try again next tick.
     } finally {
       this.infraInFlight.delete(workspaceId);
+    }
+  }
+
+  private async emitRepoAnalysis(workspaceId: string, only?: Socket): Promise<void> {
+    try {
+      const analysis = await this.repoConnectionService.getAnalysis(workspaceId);
+      if (!analysis) return; // no repo connected yet -- nothing to push
+      (only ?? this.server.to(room(workspaceId))).emit('repoAnalysis', analysis);
+    } catch (err) {
+      this.log.warn(`repo analysis push failed for ${workspaceId}: ${String(err)}`);
     }
   }
 

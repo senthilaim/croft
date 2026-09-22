@@ -6,3 +6,4 @@ export * from "./build.js";
 export * from "./infra.js";
 export * from "./cost.js";
 export * from "./files.js";
+export * from "./repo-analysis.js";
