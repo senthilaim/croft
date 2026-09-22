@@ -26,24 +26,27 @@ function tabsFor(pathname: string): Tab[] {
     return [{ label: "Workspaces", href: "/workspaces", active: () => true }];
   }
   const base = `/workspaces/${match[1]}`;
+  // Ordered to match the customer journey, not the order features shipped in:
+  // evaluate (Analyze) -> design + estimate (Designer, Cost) -> connect a project (Connect) ->
+  // operate (Analytics, Tests, Trends) -> reference (Files).
   return [
     {
       label: "Overview",
       href: base,
       active: (p) => p === base || p.startsWith(`${base}/sample-project`),
     },
+    { label: "Analyze", href: `${base}/analyze`, active: (p) => p.startsWith(`${base}/analyze`) },
     { label: "Designer", href: `${base}/designer`, active: (p) => p.startsWith(`${base}/designer`) },
+    { label: "Cost", href: `${base}/cost`, active: (p) => p.startsWith(`${base}/cost`) },
+    { label: "Connect", href: `${base}/connect`, active: (p) => p.startsWith(`${base}/connect`) },
     {
       label: "Analytics",
       href: `${base}/dashboard`,
       active: (p) => p === `${base}/dashboard` || p.startsWith(`${base}/builds`),
     },
-    { label: "Connect", href: `${base}/connect`, active: (p) => p.startsWith(`${base}/connect`) },
-    { label: "Analyze", href: `${base}/analyze`, active: (p) => p.startsWith(`${base}/analyze`) },
-    { label: "Files", href: `${base}/files`, active: (p) => p.startsWith(`${base}/files`) },
-    { label: "Cost", href: `${base}/cost`, active: (p) => p.startsWith(`${base}/cost`) },
     { label: "Tests", href: `${base}/dashboard/tests`, active: (p) => p.startsWith(`${base}/dashboard/tests`) },
     { label: "Trends", href: `${base}/dashboard/trends`, active: (p) => p.startsWith(`${base}/dashboard/trends`) },
+    { label: "Files", href: `${base}/files`, active: (p) => p.startsWith(`${base}/files`) },
   ];
 }
 
