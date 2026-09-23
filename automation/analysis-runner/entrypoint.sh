@@ -21,6 +21,18 @@ REPO_TOKEN=""
 cd /workspace/repo
 COMMIT_SHA="$(git rev-parse HEAD)"
 
+# Bazelisk already respects a repo's own .bazelversion (it takes precedence over this env var,
+# checked only as a fallback). Without one, Bazelisk defaults to whatever Bazel most recently
+# released -- a moving target that keeps getting *less* compatible with older repos as Bazel drops
+# WORKSPACE-era machinery (observed: a repo with a plain WORKSPACE http_archive() and no
+# MODULE.bazel found zero targets under Bazel 9, "--noenable_bzlmod" did not help, and the same
+# repo analyzed cleanly under 7.4.1). Pinning a known-good fallback -- new enough for full bzlmod
+# support, old enough to still fully support WORKSPACE -- makes analysis results reproducible
+# instead of silently drifting with every new Bazel release.
+if [ ! -f .bazelversion ]; then
+  export USE_BAZEL_VERSION=7.4.1
+fi
+
 echo "Running bazel query..." >&2
 set +e
 # Bazel's own progress (package loading, "N actions running", and any real errors) goes straight

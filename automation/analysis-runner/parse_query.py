@@ -45,12 +45,6 @@ def _attr(rule: dict, name: str) -> list[str]:
 def parse_query_result(results: list[dict], *, commit_sha: str, partial: bool) -> dict:
     """`results` is the parsed form of `bazel query --output=streamed_jsonproto` -- one JSON object
     per line, each a Target proto (there is no top-level wrapper object for this output format)."""
-    warnings: list[str] = []
-    if partial:
-        warnings.append(
-            "bazel query completed with errors on some packages (--keep_going) -- results may be incomplete"
-        )
-
     targets_by_kind: dict[str, int] = {}
     packages: set[str] = set()
     node_target_count: dict[str, int] = {}
@@ -95,11 +89,29 @@ def parse_query_result(results: list[dict], *, commit_sha: str, partial: bool) -
         edges = {(s, t) for s, t in edges if s in kept_ids and t in kept_ids}
         truncated = True
 
+    total_targets = sum(targets_by_kind.values())
+    warnings: list[str] = []
+    if partial and total_targets == 0:
+        # Distinct from the milder case below: --keep_going kicked in AND literally nothing was
+        # found, which almost always means every package failed to load (a real, diagnosable
+        # problem -- check the log for the actual bazel errors), not that the query pattern simply
+        # matched nothing.
+        warnings.append(
+            "No targets were found and bazel reported errors loading packages -- this usually "
+            "means every package failed to load (an unresolved dependency, a Bazel-version "
+            "mismatch, or a broken BUILD/WORKSPACE/MODULE.bazel file). Check the log below for "
+            "the actual error."
+        )
+    elif partial:
+        warnings.append(
+            "bazel query completed with errors on some packages (--keep_going) -- results may be incomplete"
+        )
+
     return {
         "commitSha": commit_sha,
         "warnings": warnings,
         "targetsByKind": targets_by_kind,
-        "totalTargets": sum(targets_by_kind.values()),
+        "totalTargets": total_targets,
         "totalPackages": len(packages),
         "externalDeps": [{"repoName": repo, "version": None} for repo in sorted(external_repos)],
         "packageGraph": {

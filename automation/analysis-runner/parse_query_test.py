@@ -45,10 +45,28 @@ def test_histogram_and_package_counts():
     assert result["warnings"] == []
 
 
-def test_partial_flag_adds_a_warning():
+def test_partial_flag_with_zero_targets_gets_the_stronger_warning():
+    # Everything failed to load (the common real case: an unresolved WORKSPACE/bzlmod dependency,
+    # a Bazel-version mismatch, or a broken MODULE.bazel) -- distinct from a few packages failing
+    # among many that succeeded, so the user isn't left staring at all-zero stats with no clue why.
     result = parse_query_result([], commit_sha="x", partial=True)
     assert len(result["warnings"]) == 1
+    assert "No targets were found" in result["warnings"][0]
+    assert "keep_going" not in result["warnings"][0]
+
+
+def test_partial_flag_with_some_targets_gets_the_milder_warning():
+    results = [rule("//lib:a", "cc_library")]
+    result = parse_query_result(results, commit_sha="x", partial=True)
+    assert len(result["warnings"]) == 1
     assert "keep_going" in result["warnings"][0]
+    assert "No targets were found" not in result["warnings"][0]
+
+
+def test_non_partial_with_zero_targets_has_no_warning():
+    # An empty repo, or a query pattern that legitimately matches nothing, isn't an error.
+    result = parse_query_result([], commit_sha="x", partial=False)
+    assert result["warnings"] == []
 
 
 def test_package_graph_drops_self_edges_and_collapses_external_deps():

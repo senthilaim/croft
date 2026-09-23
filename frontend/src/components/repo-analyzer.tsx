@@ -335,6 +335,14 @@ export function RepoAnalyzer({
 
           {analysis && analysis.status === "succeeded" && (
             <>
+              {analysis.totalTargets === 0 && analysis.warnings.length > 0 && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/30">
+                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">No targets found</p>
+                  <p className="mt-1 text-sm text-red-700 dark:text-red-300">{analysis.warnings.join(" ")}</p>
+                  <LogPanel text={analysis.logTail} failed />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div className={`${card} px-4 py-3`}>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">Total targets</p>
@@ -359,7 +367,7 @@ export function RepoAnalyzer({
                 </div>
               </div>
 
-              {analysis.warnings.length > 0 && (
+              {analysis.warnings.length > 0 && analysis.totalTargets > 0 && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
                   {analysis.warnings.join(" ")}
                 </div>
