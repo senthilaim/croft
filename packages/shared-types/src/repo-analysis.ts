@@ -59,6 +59,9 @@ export interface RepoAnalysisResult {
   finishedAt: string | null;
   commitSha: string | null;
   errorMessage: string | null;
+  /** Tail of the sandboxed job's console output (clone progress, bazel query progress, and on
+   * failure the real error). Live while running, final on success/failure. */
+  logTail: string | null;
   /** Non-fatal issues, e.g. "query completed with errors on some packages" from --keep_going. */
   warnings: string[];
   /** Rule kind (cc_library, cc_test, genrule, ...) to count. */

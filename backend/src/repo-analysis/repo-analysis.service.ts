@@ -8,6 +8,7 @@ import { RepoConnectionService } from './repo-connection.service.js';
 // Comfortably above automation's own DEFAULT_TIMEOUT_SECONDS (repo_analysis.py), so the client
 // only times out after automation would have already given up and reported a clean error.
 const CLIENT_TIMEOUT_MS = 11 * 60 * 1000;
+const LOG_POLL_INTERVAL_MS = 2000;
 
 interface AutomationAnalysisPayload {
   commitSha: string | null;
@@ -17,6 +18,29 @@ interface AutomationAnalysisPayload {
   totalPackages: number;
   externalDeps: RepoAnalysisResult['externalDeps'];
   packageGraph: RepoAnalysisResult['packageGraph'];
+}
+
+/** Carries the sandboxed job's console output alongside the failure message, so a failure is
+ * diagnosable (what actually broke) instead of just "exit 1". */
+class AnalysisCallError extends Error {
+  constructor(
+    message: string,
+    readonly logTail: string | null,
+  ) {
+    super(message);
+  }
+}
+
+function emptyResultFields() {
+  return {
+    warnings: [] as string[],
+    targetsByKind: {} as Record<string, number>,
+    totalTargets: 0,
+    totalPackages: 0,
+    externalDeps: [] as RepoAnalysisResult['externalDeps'],
+    packageGraph: { nodes: [], edges: [], truncated: false } as RepoAnalysisResult['packageGraph'],
+    suggestedNodes: [] as RepoAnalysisResult['suggestedNodes'],
+  };
 }
 
 @Injectable()
@@ -53,13 +77,8 @@ export class RepoAnalysisService {
       finishedAt: null,
       commitSha: null,
       errorMessage: null,
-      warnings: [],
-      targetsByKind: {},
-      totalTargets: 0,
-      totalPackages: 0,
-      externalDeps: [],
-      packageGraph: { nodes: [], edges: [], truncated: false },
-      suggestedNodes: [],
+      logTail: null,
+      ...emptyResultFields(),
     };
     await this.repoConnectionService.saveAnalysis(workspaceId, running);
     this.liveBus.repoAnalysisChanged(workspaceId);
@@ -69,9 +88,24 @@ export class RepoAnalysisService {
   }
 
   private async runInBackground(workspaceId: string, startedAt: string): Promise<void> {
+    let lastLogTail: string | null = null;
+    const pollLog = async () => {
+      const tail = await this.fetchLogTail(workspaceId);
+      if (tail && tail !== lastLogTail) {
+        lastLogTail = tail;
+        await this.repoConnectionService.updateAnalysisLog(workspaceId, tail);
+        this.liveBus.repoAnalysisChanged(workspaceId);
+      }
+    };
+    // Polls the sandbox container's live console output concurrently with the long-running
+    // analyze call below -- docker logs can be read from a container while it's still attached
+    // to the process that launched it, so this doesn't require automation to run the job
+    // asynchronously.
+    const logTimer = setInterval(() => void pollLog(), LOG_POLL_INTERVAL_MS);
+
     try {
       const connection = await this.repoConnectionService.getDecryptedToken(workspaceId);
-      if (!connection) throw new Error('Repository connection was removed while the job ran');
+      if (!connection) throw new AnalysisCallError('Repository connection was removed while the job ran', null);
 
       const payload = await this.callAutomation(workspaceId, connection.doc, connection.token);
       const result: RepoAnalysisResult = {
@@ -80,6 +114,7 @@ export class RepoAnalysisService {
         finishedAt: new Date().toISOString(),
         commitSha: payload.commitSha,
         errorMessage: null,
+        logTail: lastLogTail,
         warnings: payload.warnings,
         targetsByKind: payload.targetsByKind,
         totalTargets: payload.totalTargets,
@@ -91,23 +126,37 @@ export class RepoAnalysisService {
       await this.repoConnectionService.saveAnalysis(workspaceId, result);
     } catch (err) {
       this.log.warn(`analysis failed for workspace ${workspaceId}: ${String(err)}`);
+      // Prefer the error's own log tail (captured at the moment the job actually exited) over the
+      // last live poll, which could be a cycle or two stale.
+      const logTail = err instanceof AnalysisCallError && err.logTail ? err.logTail : lastLogTail;
       const failed: RepoAnalysisResult = {
         status: 'failed',
         startedAt,
         finishedAt: new Date().toISOString(),
         commitSha: null,
         errorMessage: err instanceof Error ? err.message : 'Analysis failed',
-        warnings: [],
-        targetsByKind: {},
-        totalTargets: 0,
-        totalPackages: 0,
-        externalDeps: [],
-        packageGraph: { nodes: [], edges: [], truncated: false },
-        suggestedNodes: [],
+        logTail,
+        ...emptyResultFields(),
       };
       await this.repoConnectionService.saveAnalysis(workspaceId, failed);
     } finally {
+      clearInterval(logTimer);
       this.liveBus.repoAnalysisChanged(workspaceId);
+    }
+  }
+
+  private async fetchLogTail(workspaceId: string): Promise<string | null> {
+    try {
+      const baseUrl = this.configService.getOrThrow<string>('AUTOMATION_SERVICE_URL');
+      const res = await fetch(`${baseUrl}/analyze/${workspaceId}/log`, {
+        headers: { 'X-Internal-Token': this.configService.getOrThrow<string>('AUTOMATION_INTERNAL_TOKEN') },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { log?: string };
+      return body.log || null;
+    } catch {
+      return null; // best-effort: a missed poll just means the log panel updates a beat later.
     }
   }
 
@@ -131,11 +180,14 @@ export class RepoAnalysisService {
         signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS),
       });
     } catch (err) {
-      throw new Error(`Could not reach the automation service: ${String(err)}`);
+      throw new AnalysisCallError(`Could not reach the automation service: ${String(err)}`, null);
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(typeof body?.detail?.message === 'string' ? body.detail.message : (body?.message ?? 'Analysis failed'));
+      const message =
+        typeof body?.detail?.message === 'string' ? body.detail.message : (body?.message ?? 'Analysis failed');
+      const logTail = typeof body?.detail?.logTail === 'string' ? body.detail.logTail : null;
+      throw new AnalysisCallError(message, logTail);
     }
     return (await res.json()) as AutomationAnalysisPayload;
   }

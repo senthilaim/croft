@@ -29,6 +29,9 @@ export class RepoAnalysisEntry {
   @Prop({ type: String, default: null })
   errorMessage!: string | null;
 
+  @Prop({ type: String, default: null })
+  logTail!: string | null;
+
   @Prop({ type: [String], default: [] })
   warnings!: string[];
 

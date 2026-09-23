@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { io, type Socket } from "socket.io-client";
 import {
@@ -40,6 +40,39 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
       </h2>
       {children}
     </section>
+  );
+}
+
+function LogPanel({ text, failed }: { text: string | null; failed: boolean }) {
+  const ref = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [text]);
+
+  return (
+    <div
+      className={`mt-3 overflow-hidden rounded-lg border ${
+        failed ? "border-red-200 dark:border-red-900/40" : "border-black/10 dark:border-white/10"
+      }`}
+    >
+      <div
+        className={`flex items-center justify-between border-b px-3 py-1.5 text-xs font-medium ${
+          failed
+            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+            : "border-black/10 bg-black/[.03] text-zinc-600 dark:border-white/10 dark:bg-white/[.04] dark:text-zinc-300"
+        }`}
+      >
+        {failed ? "Sandbox log (why it failed)" : "Sandbox log — live"}
+      </div>
+      <pre
+        ref={ref}
+        className="max-h-56 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-zinc-700 dark:text-zinc-300"
+      >
+        {text || "Waiting for output…"}
+      </pre>
+    </div>
   );
 }
 
@@ -295,6 +328,9 @@ export function RepoAnalyzer({
                 <span className="text-xs text-red-600 dark:text-red-400">{analysis.errorMessage}</span>
               )}
             </div>
+            {(analysis?.status === "running" || analysis?.status === "failed") && (
+              <LogPanel text={analysis.logTail} failed={analysis.status === "failed"} />
+            )}
           </Step>
 
           {analysis && analysis.status === "succeeded" && (

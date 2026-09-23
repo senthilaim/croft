@@ -243,6 +243,11 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
 _DEPLOYED_FILE_NAMES = ("config.yml", "docker-compose.yml")
 
 
+@app.get("/analyze/{workspace_id}/log", dependencies=[Depends(require_internal_token)])
+def analyze_log(workspace_id: str):
+    return {"log": repo_analysis.read_log_tail(workspace_id)}
+
+
 @app.post("/analyze", dependencies=[Depends(require_internal_token)])
 def analyze(request: AnalyzeRepoRequest):
     try:

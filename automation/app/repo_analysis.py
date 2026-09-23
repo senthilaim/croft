@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import subprocess
+import time
 from pathlib import Path
 
 log = logging.getLogger("repo_analysis")
@@ -99,31 +100,56 @@ def _build_image() -> None:
         )
 
 
+def read_log_tail(workspace_id: str, tail_lines: int = 300) -> str:
+    """Best-effort read of the still-running (or just-finished) analysis container's console
+    output, for the frontend's live log panel. Docker's log driver can be read concurrently with
+    the foreground `docker run` in run_analysis() that owns the container -- this doesn't interfere
+    with it. Returns "" if the container doesn't exist yet (job not started) or has already been
+    cleaned up (job finished and this is a stale poll) -- both are normal, not errors."""
+    _validate_workspace_id(workspace_id)
+    result = subprocess.run(
+        ["docker", "logs", "--tail", str(tail_lines), _container_name(workspace_id)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        return ""
+    return (result.stdout + result.stderr)[-8000:]
+
+
 def _cleanup(workspace_id: str) -> None:
     subprocess.run(["docker", "rm", "-f", _container_name(workspace_id)], capture_output=True, timeout=30)
     subprocess.run(["docker", "network", "rm", _network_name(workspace_id)], capture_output=True, timeout=30)
 
 
-def run_analysis(
-    workspace_id: str,
-    repo_url: str,
-    token: str,
-    branch: str,
-    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-) -> dict:
-    """Clones and analyzes `repo_url` inside a fresh, hardened, network-isolated container.
-    Returns the parsed analysis dict on success. Raises AnalysisError on any failure (bad repo,
-    query failure, timeout) -- callers persist that as the analysis's `errorMessage`."""
-    _validate_workspace_id(workspace_id)
-    if not _image_exists():
-        _build_image()
+# Substrings seen in real failures caused by a network blip during the run, not by anything wrong
+# with the repo or the query itself -- retried automatically rather than surfaced as a failure,
+# since the sandbox's Bazel cache is wiped every run (ephemeral tmpfs) and so re-downloads the
+# ~80MB Bazel binary from scratch on every single analysis.
+TRANSIENT_FAILURE_MARKERS = (
+    "could not download Bazel",
+    "unexpected EOF",
+    "TLS handshake",
+    "connection reset by peer",
+    "i/o timeout",
+    "Temporary failure in name resolution",
+    "context deadline exceeded",
+    "Could not resolve host",
+)
+MAX_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 3
+
+
+def _run_once(
+    workspace_id: str, repo_url: str, token: str, branch: str, timeout_seconds: int
+) -> subprocess.CompletedProcess:
     container_name = _container_name(workspace_id)
     network_name = _network_name(workspace_id)
 
-    # Always start clean: a previous run's container/network may still exist if a prior job
-    # crashed or timed out before its own cleanup ran.
+    # Always start clean: a previous attempt's container/network may still exist if it crashed or
+    # timed out before its own cleanup ran.
     _cleanup(workspace_id)
-
     subprocess.run(["docker", "network", "create", network_name], capture_output=True, text=True, timeout=30)
 
     cmd = [
@@ -159,7 +185,7 @@ def run_analysis(
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         log.warning("analysis job for workspace %s exceeded %ss, killing it", workspace_id, timeout_seconds)
         _cleanup(workspace_id)
@@ -167,7 +193,42 @@ def run_analysis(
     finally:
         subprocess.run(["docker", "network", "rm", network_name], capture_output=True, timeout=30)
 
-    if result.returncode != 0:
+
+def run_analysis(
+    workspace_id: str,
+    repo_url: str,
+    token: str,
+    branch: str,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict:
+    """Clones and analyzes `repo_url` inside a fresh, hardened, network-isolated container.
+    Returns the parsed analysis dict on success. Raises AnalysisError on any failure (bad repo,
+    query failure, timeout) -- callers persist that as the analysis's `errorMessage`. Retries a
+    handful of times on a failure that looks like a transient network blip (see
+    TRANSIENT_FAILURE_MARKERS) rather than a real problem with the repo or query."""
+    _validate_workspace_id(workspace_id)
+    if not _image_exists():
+        _build_image()
+
+    result: subprocess.CompletedProcess | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        result = _run_once(workspace_id, repo_url, token, branch, timeout_seconds)
+        if result.returncode == 0 or result.returncode == 3:
+            break
+        transient = any(marker in result.stderr for marker in TRANSIENT_FAILURE_MARKERS)
+        if not transient or attempt == MAX_ATTEMPTS:
+            break
+        log.warning(
+            "analysis attempt %d/%d for workspace %s hit a transient failure, retrying: %s",
+            attempt,
+            MAX_ATTEMPTS,
+            workspace_id,
+            result.stderr[-500:],
+        )
+        time.sleep(RETRY_DELAY_SECONDS)
+
+    assert result is not None
+    if result.returncode != 0 and result.returncode != 3:
         raise AnalysisError(
             f"Analysis failed (exit {result.returncode})",
             log_tail=result.stderr[-4000:],

@@ -139,6 +139,16 @@ export class RepoConnectionService {
     await this.model.updateOne({ workspaceId }, { $set: { analysis } }).exec();
   }
 
+  /** Updates only the live log tail while a run is in progress, without touching the rest of the
+   * (still-empty) analysis fields -- cheaper than a full saveAnalysis on every poll tick. Only
+   * takes effect while an analysis document already exists (i.e. after startAnalysis's initial
+   * save), which is always true by the time polling starts. */
+  async updateAnalysisLog(workspaceId: string, logTail: string): Promise<void> {
+    await this.model
+      .updateOne({ workspaceId, 'analysis.status': 'running' }, { $set: { 'analysis.logTail': logTail } })
+      .exec();
+  }
+
   /** For internal use only (the analyze flow) -- never exposed through a controller response. */
   async getDecryptedToken(workspaceId: string): Promise<{ doc: RepoConnectionDocument; token: string } | null> {
     const doc = await this.model.findOne({ workspaceId }).exec();

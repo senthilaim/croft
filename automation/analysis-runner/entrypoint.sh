@@ -23,16 +23,19 @@ COMMIT_SHA="$(git rev-parse HEAD)"
 
 echo "Running bazel query..." >&2
 set +e
+# Bazel's own progress (package loading, "N actions running", and any real errors) goes straight
+# to this script's stderr -- i.e. the container's own stderr -- so it shows up live in `docker
+# logs` while the job is still running, not just captured to a file and revealed after the fact.
 bazel --output_base=/tmp/bazel-output query --output=streamed_jsonproto --keep_going 'kind(rule, //...)' \
-    >/tmp/query-result.json 2>/tmp/query-stderr.log
+    >/tmp/query-result.json
 QUERY_EXIT=$?
 set -e
 
 # Exit code 3 means some packages failed to load but others succeeded -- still usable, partial
-# results. Any other non-zero exit (bad flags, no BUILD files at all, etc.) is a real failure.
+# results. Any other non-zero exit (bad flags, no BUILD files at all, etc.) is a real failure --
+# the actual reason already streamed to stderr above.
 if [ "$QUERY_EXIT" -ne 0 ] && [ "$QUERY_EXIT" -ne 3 ]; then
   echo "bazel query failed (exit $QUERY_EXIT)" >&2
-  tail -c 4000 /tmp/query-stderr.log >&2 || true
   exit "$QUERY_EXIT"
 fi
 
