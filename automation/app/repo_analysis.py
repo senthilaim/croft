@@ -118,9 +118,52 @@ def read_log_tail(workspace_id: str, tail_lines: int = 300) -> str:
     return (result.stdout + result.stderr)[-8000:]
 
 
+def _output_volume_name(workspace_id: str) -> str:
+    return f"analysis-output-{workspace_id}"
+
+
 def _cleanup(workspace_id: str) -> None:
     subprocess.run(["docker", "rm", "-f", _container_name(workspace_id)], capture_output=True, timeout=30)
     subprocess.run(["docker", "network", "rm", _network_name(workspace_id)], capture_output=True, timeout=30)
+    subprocess.run(
+        ["docker", "volume", "rm", "-f", _output_volume_name(workspace_id)], capture_output=True, timeout=30
+    )
+
+
+def _prepare_output_volume(workspace_id: str) -> str:
+    """Bazel's output_base (--output_base=/tmp/bazel-output in the entrypoint) is where it
+    extracts *every* external dependency -- for a repo the size of TensorFlow/XLA that includes
+    LLVM and other multi-gigabyte fetches, easily exceeding the RAM-backed tmpfs this used to be
+    ("No space left on device" extracting llvm-raw was a 2GB tmpfs, not a real disk, filling up).
+    A per-job named Docker volume is disk-backed instead, with no size ceiling to hand-tune. It
+    needs one throwaway root container to chown it to the analyzer uid first, since a fresh volume
+    is root-owned by default and the main job runs as a non-root user."""
+    name = _output_volume_name(workspace_id)
+    subprocess.run(["docker", "volume", "create", name], capture_output=True, timeout=30)
+    # The image itself runs as the non-root `analyzer` user (Dockerfile: USER analyzer), so this
+    # one-off prep step must explicitly ask for root -- otherwise chown has no permission to
+    # change ownership of the (root-owned, freshly created) volume at all. The main analysis
+    # container below still runs fully non-root; only this throwaway step, which does nothing but
+    # a single chown on an empty volume and exits, runs as root.
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            "root",
+            "-v",
+            f"{name}:/data",
+            "--entrypoint",
+            "chown",
+            IMAGE,
+            "10001:10001",
+            "/data",
+        ],
+        capture_output=True,
+        timeout=30,
+    )
+    return name
 
 
 # Substrings seen in real failures caused by a network blip during the run, not by anything wrong
@@ -147,10 +190,11 @@ def _run_once(
     container_name = _container_name(workspace_id)
     network_name = _network_name(workspace_id)
 
-    # Always start clean: a previous attempt's container/network may still exist if it crashed or
-    # timed out before its own cleanup ran.
+    # Always start clean: a previous attempt's container/network/volume may still exist if it
+    # crashed or timed out before its own cleanup ran.
     _cleanup(workspace_id)
     subprocess.run(["docker", "network", "create", network_name], capture_output=True, text=True, timeout=30)
+    output_volume = _prepare_output_volume(workspace_id)
 
     cmd = [
         "docker",
@@ -166,7 +210,12 @@ def _run_once(
         "--user",
         "10001:10001",
         "--read-only",
-        *_tmpfs("/tmp"),
+        # /tmp is a disk-backed volume, not tmpfs: Bazel's output_base (all external deps, which
+        # for a large repo can be many GB) lives there -- see _prepare_output_volume(). The other
+        # two stay tmpfs: the git clone and Bazelisk's own binary cache are both small regardless
+        # of the target repo's size.
+        "-v",
+        f"{output_volume}:/tmp",
         *_tmpfs("/home/analyzer/.cache"),
         *_tmpfs("/workspace"),
         "--cpus",
@@ -188,10 +237,15 @@ def _run_once(
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         log.warning("analysis job for workspace %s exceeded %ss, killing it", workspace_id, timeout_seconds)
-        _cleanup(workspace_id)
         raise AnalysisError("Analysis exceeded the time limit") from None
     finally:
+        # Every attempt must end with the network and (multi-GB, disk-backed) volume reclaimed --
+        # not just the container, which only cleans itself up via --rm on success. Leaving this to
+        # "the next run for this workspace cleans up the previous one" (as _cleanup() at the top of
+        # this function does) would silently leak a volume per analysis for any workspace that's
+        # only ever analyzed once.
         subprocess.run(["docker", "network", "rm", network_name], capture_output=True, timeout=30)
+        subprocess.run(["docker", "volume", "rm", "-f", output_volume], capture_output=True, timeout=30)
 
 
 def run_analysis(
