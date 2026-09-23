@@ -12,5 +12,13 @@ class Settings:
     # the user's Bazel (on the host) used, which from in here must be dialled via the host gateway.
     host_gateway: str = os.environ.get("CROFT_HOST_GATEWAY", "")
 
+    # Resource limits for the sandboxed repo-analysis job (automation/app/repo_analysis.py). These
+    # used to be hardcoded, which is exactly how the disk-space failure happened -- a fixed number
+    # nobody had reason to reconsider until a real repo exceeded it. Tunable without a code change.
+    analysis_cpu_limit: str = os.environ.get("ANALYSIS_CPU_LIMIT", "2")
+    analysis_memory_limit: str = os.environ.get("ANALYSIS_MEMORY_LIMIT", "6g")
+    analysis_pids_limit: str = os.environ.get("ANALYSIS_PIDS_LIMIT", "512")
+    analysis_timeout_seconds: int = int(os.environ.get("ANALYSIS_TIMEOUT_SECONDS", "1200"))
+
 
 settings = Settings()

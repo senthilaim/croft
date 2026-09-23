@@ -17,6 +17,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from .settings import settings
+
 log = logging.getLogger("repo_analysis")
 
 IMAGE = "croft-analysis-runner"
@@ -26,7 +28,6 @@ IMAGE = "croft-analysis-runner"
 # the Analyze feature.
 ANALYSIS_RUNNER_DIR = Path(__file__).resolve().parent.parent / "analysis-runner"
 DELIMITER = "===ANALYSIS_JSON==="
-DEFAULT_TIMEOUT_SECONDS = 600  # wall-clock cap on the whole job: clone + all bazel invocations.
 TMPFS_SIZE = "2g"
 
 
@@ -219,11 +220,11 @@ def _run_once(
         *_tmpfs("/home/analyzer/.cache"),
         *_tmpfs("/workspace"),
         "--cpus",
-        "2",
+        settings.analysis_cpu_limit,
         "--memory",
-        "4g",
+        settings.analysis_memory_limit,
         "--pids-limit",
-        "512",
+        settings.analysis_pids_limit,
         "-e",
         f"REPO_URL={repo_url}",
         "-e",
@@ -253,7 +254,7 @@ def run_analysis(
     repo_url: str,
     token: str,
     branch: str,
-    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+    timeout_seconds: int | None = None,
 ) -> dict:
     """Clones and analyzes `repo_url` inside a fresh, hardened, network-isolated container.
     Returns the parsed analysis dict on success. Raises AnalysisError on any failure (bad repo,
@@ -261,6 +262,8 @@ def run_analysis(
     handful of times on a failure that looks like a transient network blip (see
     TRANSIENT_FAILURE_MARKERS) rather than a real problem with the repo or query."""
     _validate_workspace_id(workspace_id)
+    if timeout_seconds is None:
+        timeout_seconds = settings.analysis_timeout_seconds
     if not _image_exists():
         _build_image()
 

@@ -1,6 +1,7 @@
 import { BadGatewayException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RepoAnalysisResult } from '@croft/shared-types';
+import { diagnoseAnalysisFailure } from './analysis-diagnostics.js';
 import { LiveBus } from '../live/live-bus.js';
 import { suggestBuildfarmNodes } from './infra-heuristic.js';
 import { RepoConnectionService } from './repo-connection.service.js';
@@ -78,6 +79,7 @@ export class RepoAnalysisService {
       commitSha: null,
       errorMessage: null,
       logTail: null,
+      diagnosis: null,
       ...emptyResultFields(),
     };
     await this.repoConnectionService.saveAnalysis(workspaceId, running);
@@ -115,6 +117,10 @@ export class RepoAnalysisService {
         commitSha: payload.commitSha,
         errorMessage: null,
         logTail: lastLogTail,
+        // A "succeeded" run that found nothing is still worth diagnosing -- e.g. every package
+        // failed to load, which is functionally a failure even though bazel query itself exited
+        // cleanly (via --keep_going). The real evidence lives in the console log, not `warnings`.
+        diagnosis: payload.totalTargets === 0 ? diagnoseAnalysisFailure(null, lastLogTail) : null,
         warnings: payload.warnings,
         targetsByKind: payload.targetsByKind,
         totalTargets: payload.totalTargets,
@@ -129,13 +135,15 @@ export class RepoAnalysisService {
       // Prefer the error's own log tail (captured at the moment the job actually exited) over the
       // last live poll, which could be a cycle or two stale.
       const logTail = err instanceof AnalysisCallError && err.logTail ? err.logTail : lastLogTail;
+      const errorMessage = err instanceof Error ? err.message : 'Analysis failed';
       const failed: RepoAnalysisResult = {
         status: 'failed',
         startedAt,
         finishedAt: new Date().toISOString(),
         commitSha: null,
-        errorMessage: err instanceof Error ? err.message : 'Analysis failed',
+        errorMessage,
         logTail,
+        diagnosis: diagnoseAnalysisFailure(errorMessage, logTail),
         ...emptyResultFields(),
       };
       await this.repoConnectionService.saveAnalysis(workspaceId, failed);

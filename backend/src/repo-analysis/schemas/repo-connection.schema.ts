@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import type {
+  AnalysisDiagnosis,
   ExternalDependency,
   PackageGraph,
   RepoAnalysisStatus,
@@ -31,6 +32,9 @@ export class RepoAnalysisEntry {
 
   @Prop({ type: String, default: null })
   logTail!: string | null;
+
+  @Prop({ type: Object, default: null })
+  diagnosis!: AnalysisDiagnosis | null;
 
   @Prop({ type: [String], default: [] })
   warnings!: string[];

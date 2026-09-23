@@ -343,6 +343,25 @@ never returned in any API response (only the token's last 4 characters are). Ana
 live over the same WebSocket gateway as the dashboard (`repoAnalysis` event); there is no history, a
 re-run replaces the previous result entirely. GitLab, Bitbucket and Perforce are not supported yet.
 
+**When analysis fails or finds nothing.** Real repos fail in their own ways -- a Bazel version too
+new for a repo still on `WORKSPACE`, the sandbox running out of disk on a dependency-heavy repo, a
+missing system tool, a network blip, a stale token. Rather than a bare error, a failed run (or a
+succeeded run that found zero targets, which usually means every package failed to load) is matched
+against a small, growing set of known failure classes
+(`backend/src/repo-analysis/analysis-diagnostics.ts`, same shape as `build-diagnostics.ts` for
+failed builds): a plain-language title and summary, concrete next steps, and whether it's something
+you can fix in your repo or a current Croft limitation. The raw sandbox log is always shown
+underneath as evidence, live while the job runs. When nothing matches, you still get the plain error
+and the log, not a worse experience -- and that's the signal a new rule is worth adding.
+
+Two things are already handled automatically rather than just diagnosed: the sandbox retries a
+transient network failure a few times before giving up, and repos without their own `.bazelversion`
+fall back to a Bazel release chosen for supporting both `WORKSPACE` and `MODULE.bazel` (a repo's own
+`.bazelversion` still wins). The sandbox's resource limits (`ANALYSIS_CPU_LIMIT`,
+`ANALYSIS_MEMORY_LIMIT`, `ANALYSIS_PIDS_LIMIT`, `ANALYSIS_TIMEOUT_SECONDS`; see `.env.example`) are
+tunable without a code change -- raise them if a large repository's analysis needs more than the
+defaults.
+
 ## Connecting your own project (execution platforms)
 
 The generated sample project is genrules and shell tests, which run anywhere. Real projects with

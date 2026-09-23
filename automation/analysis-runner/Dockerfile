@@ -13,8 +13,14 @@ FROM ubuntu:24.04
 # run under emulation (Rosetta/qemu) and can fail inside a hardened, read-only container.
 ARG TARGETARCH
 
+# build-essential/nodejs/golang-go: many repos' repository rules shell out to a compiler or
+# another language runtime *during* dependency fetch, before a single Bazel action runs -- without
+# these, that fails with a plain "command not found" that has nothing to do with the repo itself.
+# This is a one-time cost (the image is built lazily on first use and cached, not rebuilt per
+# analysis) traded for meaningfully broader compatibility with real-world repos.
 RUN apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends git curl ca-certificates python3 \
+    && apt-get install -y -qq --no-install-recommends \
+       git curl ca-certificates python3 build-essential nodejs npm golang-go \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL -o /usr/local/bin/bazel \
        "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${TARGETARCH}" \

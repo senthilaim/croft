@@ -58,6 +58,12 @@ services:
       # Bazel puts `localhost:<port>` in the event stream (the address your Bazel used). From inside
       # this container that has to be dialled through the host gateway instead.
       CROFT_HOST_GATEWAY: host.docker.internal
+      # Resource limits for the sandboxed repo-analysis job. Raise these if a large repository's
+      # analysis is failing with a disk/memory error or timing out -- see README.md.
+      ANALYSIS_CPU_LIMIT: ${ANALYSIS_CPU_LIMIT:-2}
+      ANALYSIS_MEMORY_LIMIT: ${ANALYSIS_MEMORY_LIMIT:-6g}
+      ANALYSIS_PIDS_LIMIT: ${ANALYSIS_PIDS_LIMIT:-512}
+      ANALYSIS_TIMEOUT_SECONDS: ${ANALYSIS_TIMEOUT_SECONDS:-1200}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

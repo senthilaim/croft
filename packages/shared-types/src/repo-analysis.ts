@@ -50,6 +50,20 @@ export interface PackageGraph {
   truncated: boolean;
 }
 
+/** A recognized class of analysis failure (or empty-result run), matched from the sandbox's
+ * console output -- e.g. "disk full", "Bazel/WORKSPACE version mismatch", "missing system tool".
+ * Not every failure matches a rule; when none does, this is null and the UI falls back to the
+ * plain errorMessage + log. */
+export interface AnalysisDiagnosis {
+  category: string;
+  title: string;
+  summary: string;
+  recommendedSteps: string[];
+  /** true: something the user can fix in their own repo (pin a Bazel version, fix a branch name).
+   * false: a current limitation of Croft's analysis sandbox, not the repo's fault. */
+  selfServiceable: boolean;
+}
+
 /** Result of running `bazel query` against a connected repo inside the sandboxed analysis job.
  * Always the *latest* run for a workspace -- re-analyzing replaces this wholesale, there is no
  * history. */
@@ -62,6 +76,8 @@ export interface RepoAnalysisResult {
   /** Tail of the sandboxed job's console output (clone progress, bazel query progress, and on
    * failure the real error). Live while running, final on success/failure. */
   logTail: string | null;
+  /** Set for a failed run, or a succeeded run that found zero targets -- see AnalysisDiagnosis. */
+  diagnosis: AnalysisDiagnosis | null;
   /** Non-fatal issues, e.g. "query completed with errors on some packages" from --keep_going. */
   warnings: string[];
   /** Rule kind (cc_library, cc_test, genrule, ...) to count. */

@@ -21,7 +21,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { RepoAnalysisResult, RepoConnection } from "@croft/shared-types";
+import type { AnalysisDiagnosis, RepoAnalysisResult, RepoConnection } from "@croft/shared-types";
 import { layoutPackageGraph } from "@/lib/package-graph-layout";
 
 const field =
@@ -72,6 +72,50 @@ function LogPanel({ text, failed }: { text: string | null; failed: boolean }) {
       >
         {text || "Waiting for output…"}
       </pre>
+    </div>
+  );
+}
+
+/** Shared block for both a failed run and a succeeded run that found nothing -- title, plain-
+ * language summary, and concrete next steps when the failure matched a known class (see
+ * backend/src/repo-analysis/analysis-diagnostics.ts), the raw sandbox log always underneath as
+ * evidence, and a fallback to the plain error message when nothing matched. */
+function DiagnosisBlock({
+  diagnosis,
+  fallbackMessage,
+  logTail,
+}: {
+  diagnosis: AnalysisDiagnosis | null;
+  fallbackMessage: string | null;
+  logTail: string | null;
+}) {
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/30">
+      {diagnosis ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300">{diagnosis.title}</p>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                diagnosis.selfServiceable
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                  : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              }`}
+            >
+              {diagnosis.selfServiceable ? "Something to fix in your repo" : "Current Croft limitation"}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-red-700 dark:text-red-300">{diagnosis.summary}</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-red-700 dark:text-red-300">
+            {diagnosis.recommendedSteps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        </>
+      ) : (
+        fallbackMessage && <p className="text-sm text-red-700 dark:text-red-300">{fallbackMessage}</p>
+      )}
+      <LogPanel text={logTail} failed />
     </div>
   );
 }
@@ -324,23 +368,25 @@ export function RepoAnalyzer({
                   {connected ? "Cloning and running bazel query…" : "Connecting…"}
                 </span>
               )}
-              {analysis?.status === "failed" && (
-                <span className="text-xs text-red-600 dark:text-red-400">{analysis.errorMessage}</span>
-              )}
             </div>
-            {(analysis?.status === "running" || analysis?.status === "failed") && (
-              <LogPanel text={analysis.logTail} failed={analysis.status === "failed"} />
+            {analysis?.status === "running" && <LogPanel text={analysis.logTail} failed={false} />}
+            {analysis?.status === "failed" && (
+              <DiagnosisBlock
+                diagnosis={analysis.diagnosis}
+                fallbackMessage={analysis.errorMessage}
+                logTail={analysis.logTail}
+              />
             )}
           </Step>
 
           {analysis && analysis.status === "succeeded" && (
             <>
               {analysis.totalTargets === 0 && analysis.warnings.length > 0 && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/30">
-                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">No targets found</p>
-                  <p className="mt-1 text-sm text-red-700 dark:text-red-300">{analysis.warnings.join(" ")}</p>
-                  <LogPanel text={analysis.logTail} failed />
-                </div>
+                <DiagnosisBlock
+                  diagnosis={analysis.diagnosis}
+                  fallbackMessage={analysis.warnings.join(" ")}
+                  logTail={analysis.logTail}
+                />
               )}
 
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
