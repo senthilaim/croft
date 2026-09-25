@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import type { RepoAnalysisResult, RepoConnection, Workspace } from "@croft/shared-types";
+import type { RebuildSimulationResult, RepoAnalysisResult, RepoConnection, Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { RepoAnalyzer } from "@/components/repo-analyzer";
@@ -22,9 +22,14 @@ export default async function AnalyzePage({
   const connection: RepoConnection | null = connectionRes.ok ? await connectionRes.json() : null;
 
   let analysis: RepoAnalysisResult | null = null;
+  let simulation: RebuildSimulationResult | null = null;
   if (connection) {
-    const analysisRes = await backendFetch(`/workspaces/${workspaceId}/repo-analysis/result`);
+    const [analysisRes, simulationRes] = await Promise.all([
+      backendFetch(`/workspaces/${workspaceId}/repo-analysis/result`),
+      backendFetch(`/workspaces/${workspaceId}/repo-analysis/simulate-rebuild/result`),
+    ]);
     if (analysisRes.ok) analysis = await analysisRes.json();
+    if (simulationRes.ok) simulation = await simulationRes.json();
   }
 
   return (
@@ -40,7 +45,12 @@ export default async function AnalyzePage({
             dependency graph, and a suggested Buildfarm sizing.
           </p>
         </div>
-        <RepoAnalyzer workspaceId={workspaceId} initialConnection={connection} initialAnalysis={analysis} />
+        <RepoAnalyzer
+          workspaceId={workspaceId}
+          initialConnection={connection}
+          initialAnalysis={analysis}
+          initialSimulation={simulation}
+        />
       </div>
     </div>
   );

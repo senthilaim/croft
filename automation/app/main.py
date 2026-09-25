@@ -6,11 +6,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Response
 from pymongo.database import Database
 
-from . import bes_server, cas_client, docker_manager, infra_sampler, render, repo_analysis
+from . import bes_server, cas_client, docker_manager, infra_sampler, rebuild_simulation, render, repo_analysis
 from .auth import require_internal_token
 from .db import get_db
 from .docker_manager import ComposeError
-from .models import AnalyzeRepoRequest, ProvisionRequest, TeardownRequest
+from .models import AnalyzeRepoRequest, ProvisionRequest, SimulateRebuildRequest, TeardownRequest
+from .rebuild_simulation import SimulationError
 from .repo_analysis import AnalysisError
 from .port_allocator import allocate_port, reallocate_port
 from .settings import settings
@@ -255,6 +256,28 @@ def analyze(request: AnalyzeRepoRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except AnalysisError as e:
+        raise HTTPException(status_code=502, detail={"message": str(e), "logTail": e.log_tail})
+
+
+@app.get("/simulate-rebuild/{workspace_id}/log", dependencies=[Depends(require_internal_token)])
+def simulate_rebuild_log(workspace_id: str):
+    return {"log": rebuild_simulation.read_log_tail(workspace_id)}
+
+
+@app.post("/simulate-rebuild", dependencies=[Depends(require_internal_token)])
+def simulate_rebuild(request: SimulateRebuildRequest):
+    try:
+        return rebuild_simulation.run_simulation(
+            request.workspaceId,
+            request.repoUrl,
+            request.token,
+            request.branch,
+            request.target,
+            request.filePath,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except SimulationError as e:
         raise HTTPException(status_code=502, detail={"message": str(e), "logTail": e.log_tail})
 
 

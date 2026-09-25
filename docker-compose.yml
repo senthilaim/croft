@@ -64,6 +64,12 @@ services:
       ANALYSIS_MEMORY_LIMIT: ${ANALYSIS_MEMORY_LIMIT:-6g}
       ANALYSIS_PIDS_LIMIT: ${ANALYSIS_PIDS_LIMIT:-512}
       ANALYSIS_TIMEOUT_SECONDS: ${ANALYSIS_TIMEOUT_SECONDS:-1200}
+      # Same idea for the rebuild-simulation job ("Why did this rebuild?") -- higher by default
+      # since it runs a real `bazel build` twice, not just `bazel query`.
+      SIMULATION_CPU_LIMIT: ${SIMULATION_CPU_LIMIT:-4}
+      SIMULATION_MEMORY_LIMIT: ${SIMULATION_MEMORY_LIMIT:-8g}
+      SIMULATION_PIDS_LIMIT: ${SIMULATION_PIDS_LIMIT:-1024}
+      SIMULATION_TIMEOUT_SECONDS: ${SIMULATION_TIMEOUT_SECONDS:-1800}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

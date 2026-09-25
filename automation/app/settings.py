@@ -20,5 +20,13 @@ class Settings:
     analysis_pids_limit: str = os.environ.get("ANALYSIS_PIDS_LIMIT", "512")
     analysis_timeout_seconds: int = int(os.environ.get("ANALYSIS_TIMEOUT_SECONDS", "1200"))
 
+    # Resource limits for the rebuild-simulation job (automation/app/rebuild_simulation.py). Higher
+    # than the analysis tier by default: this job runs a real `bazel build` (actual compilation)
+    # twice, not just `bazel query` (loading/analysis only, no actions executed).
+    simulation_cpu_limit: str = os.environ.get("SIMULATION_CPU_LIMIT", "4")
+    simulation_memory_limit: str = os.environ.get("SIMULATION_MEMORY_LIMIT", "8g")
+    simulation_pids_limit: str = os.environ.get("SIMULATION_PIDS_LIMIT", "1024")
+    simulation_timeout_seconds: int = int(os.environ.get("SIMULATION_TIMEOUT_SECONDS", "1800"))
+
 
 settings = Settings()

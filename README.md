@@ -362,6 +362,43 @@ fall back to a Bazel release chosen for supporting both `WORKSPACE` and `MODULE.
 tunable without a code change -- raise them if a large repository's analysis needs more than the
 defaults.
 
+## "Why did this rebuild?" — an incremental-build diagnosis tool
+
+Unpredictable incremental builds (a small change triggering a much bigger rebuild than expected) is
+a common, recognized Bazel pain point, and short of expert manual archaeology through `--explain`
+output there's no accessible way to answer "why does Bazel think this needs to rebuild." Once a
+repo has a successful analysis, the Analyze page's third step lets you ask exactly that for any
+target: give it a Bazel target label and a repo-relative file path, and it builds the target once
+(cold baseline), appends a single newline to that file (a real content-hash change -- a bare
+`touch` only updates mtime, which Bazel's source-file digest comparison ignores), builds the target
+again with `bazel build --explain=<file> --verbose_explanations`, and reports exactly which actions
+re-ran and Bazel's own stated reason for each.
+
+**How it works.** Both builds run inside one invocation of the *same* hardened sandbox container
+the repo-analysis feature uses (`automation/analysis-runner/simulate-entrypoint.sh`, launched by
+`automation/app/rebuild_simulation.py` -- same Docker hardening flags, same per-job network, same
+disk-backed output-base volume), deliberately in one container so Bazel's local action cache
+persists between the baseline and post-edit builds; splitting this across two separate `docker run`
+calls would make every action look like a cold cache miss on the second build too, which defeats
+the entire point. The `--explain` log is parsed by `automation/analysis-runner/explain_parser.py`
+into a rebuilt-action list, each classified as a real content/input **change** (what your edit
+triggers), an **unconditional** action that always re-executes regardless of any edit (e.g. the
+workspace-status action -- shown separately so it isn't mistaken for a consequence of your edit), a
+**new** (cold-cache) action, or **other**.
+
+**Be aware this runs a real build**, unlike repo analysis (`bazel query`, which never executes
+anything) -- it can fail for reasons specific to your target's toolchain requirements, not just for
+the reasons this tool is designed to explain; the UI says so at the trigger step. It reuses the
+same general failure-diagnosis engine as repo analysis (`analysis-diagnostics.ts`) for that case,
+and the same live-log-while-running / no-history-on-rerun conventions. The sandbox's resource
+limits for this job are separately tunable (`SIMULATION_CPU_LIMIT`, `SIMULATION_MEMORY_LIMIT`,
+`SIMULATION_PIDS_LIMIT`, `SIMULATION_TIMEOUT_SECONDS`; see `.env.example`) -- higher than the
+analysis job's defaults, since a real build (compilation) is heavier than `bazel query`.
+
+**Explicitly out of scope for now:** per-action cache visibility for a user's *live* build against
+their own provisioned Buildfarm (this only exercises Bazel's local action cache inside the sandbox,
+not a real remote cache), and config/baseline-transition bleed detection.
+
 ## Connecting your own project (execution platforms)
 
 The generated sample project is genrules and shell tests, which run anywhere. Real projects with
