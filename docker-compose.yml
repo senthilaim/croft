@@ -70,6 +70,11 @@ services:
       SIMULATION_MEMORY_LIMIT: ${SIMULATION_MEMORY_LIMIT:-8g}
       SIMULATION_PIDS_LIMIT: ${SIMULATION_PIDS_LIMIT:-1024}
       SIMULATION_TIMEOUT_SECONDS: ${SIMULATION_TIMEOUT_SECONDS:-1800}
+      # Same idea for the cache-check job ("Does my remote cache actually work?").
+      CACHE_CHECK_CPU_LIMIT: ${CACHE_CHECK_CPU_LIMIT:-4}
+      CACHE_CHECK_MEMORY_LIMIT: ${CACHE_CHECK_MEMORY_LIMIT:-8g}
+      CACHE_CHECK_PIDS_LIMIT: ${CACHE_CHECK_PIDS_LIMIT:-1024}
+      CACHE_CHECK_TIMEOUT_SECONDS: ${CACHE_CHECK_TIMEOUT_SECONDS:-1800}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

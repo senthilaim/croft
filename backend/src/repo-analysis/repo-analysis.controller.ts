@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type {
+  CacheCheckRequest,
+  CacheCheckResult,
   ConnectRepoRequest,
   RebuildSimulationRequest,
   RebuildSimulationResult,
@@ -20,6 +22,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
+import { CacheCheckService } from './cache-check.service.js';
 import { RebuildSimulationService } from './rebuild-simulation.service.js';
 import { RepoAnalysisService } from './repo-analysis.service.js';
 import { RepoConnectionService } from './repo-connection.service.js';
@@ -31,6 +34,7 @@ export class RepoAnalysisController {
     private readonly repoConnectionService: RepoConnectionService,
     private readonly repoAnalysisService: RepoAnalysisService,
     private readonly rebuildSimulationService: RebuildSimulationService,
+    private readonly cacheCheckService: CacheCheckService,
   ) {}
 
   @Post('connect')
@@ -82,6 +86,22 @@ export class RepoAnalysisController {
   async getSimulationResult(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<RebuildSimulationResult> {
     const result = await this.rebuildSimulationService.getResult(workspace.id);
     if (!result) throw new NotFoundException('No rebuild simulation has been run for this workspace');
+    return result;
+  }
+
+  @Post('cache-check')
+  @HttpCode(202)
+  startCacheCheck(
+    @CurrentWorkspace() workspace: WorkspaceDocument,
+    @Body() body: CacheCheckRequest,
+  ): Promise<CacheCheckResult> {
+    return this.cacheCheckService.startCacheCheck(workspace.id, body?.target);
+  }
+
+  @Get('cache-check/result')
+  async getCacheCheckResult(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<CacheCheckResult> {
+    const result = await this.cacheCheckService.getResult(workspace.id);
+    if (!result) throw new NotFoundException('No cache check has been run for this workspace');
     return result;
   }
 }

@@ -395,9 +395,37 @@ limits for this job are separately tunable (`SIMULATION_CPU_LIMIT`, `SIMULATION_
 `SIMULATION_PIDS_LIMIT`, `SIMULATION_TIMEOUT_SECONDS`; see `.env.example`) -- higher than the
 analysis job's defaults, since a real build (compilation) is heavier than `bazel query`.
 
-**Explicitly out of scope for now:** per-action cache visibility for a user's *live* build against
-their own provisioned Buildfarm (this only exercises Bazel's local action cache inside the sandbox,
-not a real remote cache), and config/baseline-transition bleed detection.
+**Explicitly out of scope for now:** dependency-tightening analysis (recommending narrower `deps`
+to reduce unnecessary rebuilds), and config/baseline-transition bleed detection. Per-action cache
+visibility against a user's *real* provisioned Buildfarm -- the other item originally deferred here
+-- is no longer out of scope; see the next section.
+
+## "Does my remote cache actually work?" — validating the real Buildfarm
+
+A separate check, once a repo has a successful analysis and this workspace has a Buildfarm
+**currently running**: give it a Bazel target, and Croft builds it twice inside the sandbox --
+each build starting from a completely fresh local cache -- both pointed at this workspace's own,
+real remote cache (`--remote_cache`, never `--remote_executor`). The first build ("read check")
+reports what the Buildfarm already had cached for this target; the second ("round-trip check")
+re-runs the same build against the same cache, proving both write and read work end to end. Real
+per-action results come from Bazel's own `--execution_log_json_file` output (`cacheHit`,
+`remotable`, `remoteCacheable` per action -- a separate, stable mechanism from BEP, parsed by
+`automation/analysis-runner/cache_execution_log_parser.py`), not from `--explain`.
+
+**This is the one sandbox job in this app that intentionally breaks network isolation.** Every
+other sandboxed job here (repo analysis, rebuild simulation) has no path to any of Croft's own
+infrastructure -- this one does, on purpose, via `--add-host=host.docker.internal:host-gateway`, so
+it can reach the workspace's real, running Buildfarm server over the network
+(`automation/app/cache_check.py` has the full reasoning). The UI discloses this plainly, distinctly
+from the other two sandbox checks' own disclaimers, and requires an explicit opt-in checkbox before
+the trigger enables. `--remote_executor` is never set by this job -- validating cache reuse doesn't
+need real remote execution, and dispatching a repo's untrusted actions onto your real worker pool
+would be a materially bigger abuse surface for no benefit to what this feature answers. The check is
+hard-gated on the workspace's Buildfarm being `'running'` (fetched live, not a stale flag); when it
+isn't, the UI shows a disabled state linking to the designer instead of a bare disabled button. Its
+own resource-limit tier (`CACHE_CHECK_CPU_LIMIT`, `CACHE_CHECK_MEMORY_LIMIT`,
+`CACHE_CHECK_PIDS_LIMIT`, `CACHE_CHECK_TIMEOUT_SECONDS`; see `.env.example`) is independently
+tunable from the rebuild-simulation tier.
 
 ## Connecting your own project (execution platforms)
 

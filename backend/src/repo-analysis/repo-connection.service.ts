@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type {
+  CacheCheckResult,
   RebuildSimulationResult,
   RepoAnalysisResult,
   RepoConnection as RepoConnectionDto,
@@ -115,6 +116,7 @@ export class RepoConnectionService {
         connectedBy: userId,
         analysis: null,
         latestSimulation: null,
+        latestCacheCheck: null,
       },
       { upsert: true, new: true },
     );
@@ -166,6 +168,25 @@ export class RepoConnectionService {
       .updateOne(
         { workspaceId, 'latestSimulation.status': 'running' },
         { $set: { 'latestSimulation.logTail': logTail } },
+      )
+      .exec();
+  }
+
+  async getCacheCheck(workspaceId: string): Promise<CacheCheckResult | null> {
+    const doc = await this.model.findOne({ workspaceId }, { latestCacheCheck: 1 }).exec();
+    return (doc?.latestCacheCheck as unknown as CacheCheckResult | null) ?? null;
+  }
+
+  /** Whole-document replace, same "latest only, no history" convention as saveAnalysis. */
+  async saveCacheCheck(workspaceId: string, cacheCheck: CacheCheckResult): Promise<void> {
+    await this.model.updateOne({ workspaceId }, { $set: { latestCacheCheck: cacheCheck } }).exec();
+  }
+
+  async updateCacheCheckLog(workspaceId: string, logTail: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { workspaceId, 'latestCacheCheck.status': 'running' },
+        { $set: { 'latestCacheCheck.logTail': logTail } },
       )
       .exec();
   }

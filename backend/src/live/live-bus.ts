@@ -30,6 +30,14 @@ export class LiveBus {
   onRebuildSimulationChanged(listener: (workspaceId: string) => void): void {
     this.emitter.on('rebuildSimulation', listener);
   }
+
+  cacheCheckChanged(workspaceId: string): void {
+    this.emitter.emit('cacheCheck', workspaceId);
+  }
+
+  onCacheCheckChanged(listener: (workspaceId: string) => void): void {
+    this.emitter.on('cacheCheck', listener);
+  }
 }
 
 @Global()

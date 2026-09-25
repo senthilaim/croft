@@ -6,11 +6,27 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Response
 from pymongo.database import Database
 
-from . import bes_server, cas_client, docker_manager, infra_sampler, rebuild_simulation, render, repo_analysis
+from . import (
+    bes_server,
+    cache_check,
+    cas_client,
+    docker_manager,
+    infra_sampler,
+    rebuild_simulation,
+    render,
+    repo_analysis,
+)
 from .auth import require_internal_token
+from .cache_check import CacheCheckError
 from .db import get_db
 from .docker_manager import ComposeError
-from .models import AnalyzeRepoRequest, ProvisionRequest, SimulateRebuildRequest, TeardownRequest
+from .models import (
+    AnalyzeRepoRequest,
+    CacheCheckRequest,
+    ProvisionRequest,
+    SimulateRebuildRequest,
+    TeardownRequest,
+)
 from .rebuild_simulation import SimulationError
 from .repo_analysis import AnalysisError
 from .port_allocator import allocate_port, reallocate_port
@@ -278,6 +294,28 @@ def simulate_rebuild(request: SimulateRebuildRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except SimulationError as e:
+        raise HTTPException(status_code=502, detail={"message": str(e), "logTail": e.log_tail})
+
+
+@app.get("/cache-check/{workspace_id}/log", dependencies=[Depends(require_internal_token)])
+def cache_check_log(workspace_id: str):
+    return {"log": cache_check.read_log_tail(workspace_id)}
+
+
+@app.post("/cache-check", dependencies=[Depends(require_internal_token)])
+def cache_check_endpoint(request: CacheCheckRequest):
+    try:
+        return cache_check.run_cache_check(
+            request.workspaceId,
+            request.repoUrl,
+            request.token,
+            request.branch,
+            request.target,
+            request.grpcPort,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except CacheCheckError as e:
         raise HTTPException(status_code=502, detail={"message": str(e), "logTail": e.log_tail})
 
 

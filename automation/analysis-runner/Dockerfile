@@ -35,7 +35,9 @@ COPY --chown=analyzer:analyzer entrypoint.sh /usr/local/bin/analysis-entrypoint.
 COPY --chown=analyzer:analyzer parse_query.py /usr/local/bin/parse_query.py
 COPY --chown=analyzer:analyzer simulate-entrypoint.sh /usr/local/bin/simulate-entrypoint.sh
 COPY --chown=analyzer:analyzer explain_parser.py /usr/local/bin/explain_parser.py
+COPY --chown=analyzer:analyzer cache-check-entrypoint.sh /usr/local/bin/cache-check-entrypoint.sh
+COPY --chown=analyzer:analyzer cache_execution_log_parser.py /usr/local/bin/cache_execution_log_parser.py
 
-# Default entrypoint is the repo-analysis job; rebuild_simulation.py launches this same image
-# with `docker run --entrypoint /usr/local/bin/simulate-entrypoint.sh` instead.
+# Default entrypoint is the repo-analysis job; rebuild_simulation.py and cache_check.py launch
+# this same image with --entrypoint pointed at their own entrypoint script instead.
 ENTRYPOINT ["/usr/local/bin/analysis-entrypoint.sh"]

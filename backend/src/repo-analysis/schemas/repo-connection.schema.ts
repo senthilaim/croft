@@ -2,6 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import type {
   AnalysisDiagnosis,
+  CacheCheckAction,
+  CacheCheckPhaseResult,
+  CacheCheckStatus,
   ExternalDependency,
   PackageGraph,
   RebuildActionCategory,
@@ -104,6 +107,45 @@ export class RebuildSimulationEntry {
 }
 const RebuildSimulationSchema = SchemaFactory.createForClass(RebuildSimulationEntry);
 
+const EMPTY_CACHE_CHECK_PHASE: CacheCheckPhaseResult = {
+  cacheableActions: 0,
+  remoteCacheHits: 0,
+  hitRatePercent: 0,
+  actions: [] as CacheCheckAction[],
+};
+
+// Same minimize: false reasoning as the two entries above.
+@Schema({ _id: false, minimize: false })
+export class CacheCheckEntry {
+  @Prop({ type: String, required: true, enum: ['pending', 'running', 'succeeded', 'failed'] })
+  status!: CacheCheckStatus;
+
+  @Prop({ required: true })
+  startedAt!: string;
+
+  @Prop({ type: String, default: null })
+  finishedAt!: string | null;
+
+  @Prop({ required: true })
+  target!: string;
+
+  @Prop({ type: String, default: null })
+  errorMessage!: string | null;
+
+  @Prop({ type: String, default: null })
+  logTail!: string | null;
+
+  @Prop({ type: Object, default: null })
+  diagnosis!: AnalysisDiagnosis | null;
+
+  @Prop({ type: Object, default: EMPTY_CACHE_CHECK_PHASE })
+  readCheck!: CacheCheckPhaseResult;
+
+  @Prop({ type: Object, default: EMPTY_CACHE_CHECK_PHASE })
+  roundTripCheck!: CacheCheckPhaseResult;
+}
+const CacheCheckSchema = SchemaFactory.createForClass(CacheCheckEntry);
+
 /**
  * One connected repo per workspace (v1). `analysis` holds only the latest run -- re-analyzing
  * overwrites it wholesale, mirroring DemoService's clear-then-replace approach, since nothing here
@@ -150,6 +192,9 @@ export class RepoConnection {
 
   @Prop({ type: RebuildSimulationSchema, default: null })
   latestSimulation!: RebuildSimulationEntry | null;
+
+  @Prop({ type: CacheCheckSchema, default: null })
+  latestCacheCheck!: CacheCheckEntry | null;
 }
 
 export const RepoConnectionSchema = SchemaFactory.createForClass(RepoConnection);

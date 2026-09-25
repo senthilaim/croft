@@ -1,5 +1,12 @@
 import { notFound, redirect } from "next/navigation";
-import type { RebuildSimulationResult, RepoAnalysisResult, RepoConnection, Workspace } from "@croft/shared-types";
+import type {
+  BuildfarmInstance,
+  CacheCheckResult,
+  RebuildSimulationResult,
+  RepoAnalysisResult,
+  RepoConnection,
+  Workspace,
+} from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { RepoAnalyzer } from "@/components/repo-analyzer";
@@ -23,14 +30,20 @@ export default async function AnalyzePage({
 
   let analysis: RepoAnalysisResult | null = null;
   let simulation: RebuildSimulationResult | null = null;
+  let cacheCheck: CacheCheckResult | null = null;
   if (connection) {
-    const [analysisRes, simulationRes] = await Promise.all([
+    const [analysisRes, simulationRes, cacheCheckRes] = await Promise.all([
       backendFetch(`/workspaces/${workspaceId}/repo-analysis/result`),
       backendFetch(`/workspaces/${workspaceId}/repo-analysis/simulate-rebuild/result`),
+      backendFetch(`/workspaces/${workspaceId}/repo-analysis/cache-check/result`),
     ]);
     if (analysisRes.ok) analysis = await analysisRes.json();
     if (simulationRes.ok) simulation = await simulationRes.json();
+    if (cacheCheckRes.ok) cacheCheck = await cacheCheckRes.json();
   }
+
+  const buildfarmRes = await backendFetch(`/workspaces/${workspaceId}/buildfarm/status`);
+  const buildfarm: BuildfarmInstance | null = buildfarmRes.ok ? await buildfarmRes.json() : null;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -50,6 +63,8 @@ export default async function AnalyzePage({
           initialConnection={connection}
           initialAnalysis={analysis}
           initialSimulation={simulation}
+          initialCacheCheck={cacheCheck}
+          buildfarmStatus={buildfarm?.status ?? null}
         />
       </div>
     </div>

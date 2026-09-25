@@ -69,6 +69,7 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     bus.onBuildsChanged((workspaceId) => this.scheduleBuilds(workspaceId));
     bus.onRepoAnalysisChanged((workspaceId) => void this.emitRepoAnalysis(workspaceId));
     bus.onRebuildSimulationChanged((workspaceId) => void this.emitRebuildSimulation(workspaceId));
+    bus.onCacheCheckChanged((workspaceId) => void this.emitCacheCheck(workspaceId));
   }
 
   afterInit(): void {
@@ -119,6 +120,7 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       this.emitInfra(workspaceId, client),
       this.emitRepoAnalysis(workspaceId, client),
       this.emitRebuildSimulation(workspaceId, client),
+      this.emitCacheCheck(workspaceId, client),
     ]);
     this.startInfra(workspaceId);
     return { ok: true };
@@ -190,6 +192,16 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
       (only ?? this.server.to(room(workspaceId))).emit('rebuildSimulation', simulation);
     } catch (err) {
       this.log.warn(`rebuild simulation push failed for ${workspaceId}: ${String(err)}`);
+    }
+  }
+
+  private async emitCacheCheck(workspaceId: string, only?: Socket): Promise<void> {
+    try {
+      const cacheCheck = await this.repoConnectionService.getCacheCheck(workspaceId);
+      if (!cacheCheck) return; // no cache check run yet -- nothing to push
+      (only ?? this.server.to(room(workspaceId))).emit('cacheCheck', cacheCheck);
+    } catch (err) {
+      this.log.warn(`cache check push failed for ${workspaceId}: ${String(err)}`);
     }
   }
 
