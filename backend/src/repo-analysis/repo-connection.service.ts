@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type {
+  CacheCheckResult,
+  RebuildSimulationResult,
   RepoAnalysisResult,
   RepoConnection as RepoConnectionDto,
 } from '@croft/shared-types';
@@ -113,6 +115,8 @@ export class RepoConnectionService {
         tokenLast4: trimmedToken.slice(-4),
         connectedBy: userId,
         analysis: null,
+        latestSimulation: null,
+        latestCacheCheck: null,
       },
       { upsert: true, new: true },
     );
@@ -146,6 +150,44 @@ export class RepoConnectionService {
   async updateAnalysisLog(workspaceId: string, logTail: string): Promise<void> {
     await this.model
       .updateOne({ workspaceId, 'analysis.status': 'running' }, { $set: { 'analysis.logTail': logTail } })
+      .exec();
+  }
+
+  async getSimulation(workspaceId: string): Promise<RebuildSimulationResult | null> {
+    const doc = await this.model.findOne({ workspaceId }, { latestSimulation: 1 }).exec();
+    return (doc?.latestSimulation as unknown as RebuildSimulationResult | null) ?? null;
+  }
+
+  /** Whole-document replace, same "latest only, no history" convention as saveAnalysis. */
+  async saveSimulation(workspaceId: string, simulation: RebuildSimulationResult): Promise<void> {
+    await this.model.updateOne({ workspaceId }, { $set: { latestSimulation: simulation } }).exec();
+  }
+
+  async updateSimulationLog(workspaceId: string, logTail: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { workspaceId, 'latestSimulation.status': 'running' },
+        { $set: { 'latestSimulation.logTail': logTail } },
+      )
+      .exec();
+  }
+
+  async getCacheCheck(workspaceId: string): Promise<CacheCheckResult | null> {
+    const doc = await this.model.findOne({ workspaceId }, { latestCacheCheck: 1 }).exec();
+    return (doc?.latestCacheCheck as unknown as CacheCheckResult | null) ?? null;
+  }
+
+  /** Whole-document replace, same "latest only, no history" convention as saveAnalysis. */
+  async saveCacheCheck(workspaceId: string, cacheCheck: CacheCheckResult): Promise<void> {
+    await this.model.updateOne({ workspaceId }, { $set: { latestCacheCheck: cacheCheck } }).exec();
+  }
+
+  async updateCacheCheckLog(workspaceId: string, logTail: string): Promise<void> {
+    await this.model
+      .updateOne(
+        { workspaceId, 'latestCacheCheck.status': 'running' },
+        { $set: { 'latestCacheCheck.logTail': logTail } },
+      )
       .exec();
   }
 

@@ -8,12 +8,22 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import type { ConnectRepoRequest, RepoAnalysisResult, RepoConnection } from '@croft/shared-types';
+import type {
+  CacheCheckRequest,
+  CacheCheckResult,
+  ConnectRepoRequest,
+  RebuildSimulationRequest,
+  RebuildSimulationResult,
+  RepoAnalysisResult,
+  RepoConnection,
+} from '@croft/shared-types';
 import { CurrentUserId } from '../auth/current-user-id.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
+import { CacheCheckService } from './cache-check.service.js';
+import { RebuildSimulationService } from './rebuild-simulation.service.js';
 import { RepoAnalysisService } from './repo-analysis.service.js';
 import { RepoConnectionService } from './repo-connection.service.js';
 
@@ -23,6 +33,8 @@ export class RepoAnalysisController {
   constructor(
     private readonly repoConnectionService: RepoConnectionService,
     private readonly repoAnalysisService: RepoAnalysisService,
+    private readonly rebuildSimulationService: RebuildSimulationService,
+    private readonly cacheCheckService: CacheCheckService,
   ) {}
 
   @Post('connect')
@@ -58,6 +70,38 @@ export class RepoAnalysisController {
   async getResult(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<RepoAnalysisResult> {
     const result = await this.repoAnalysisService.getResult(workspace.id);
     if (!result) throw new NotFoundException('No analysis has been run for this workspace');
+    return result;
+  }
+
+  @Post('simulate-rebuild')
+  @HttpCode(202)
+  startSimulation(
+    @CurrentWorkspace() workspace: WorkspaceDocument,
+    @Body() body: RebuildSimulationRequest,
+  ): Promise<RebuildSimulationResult> {
+    return this.rebuildSimulationService.startSimulation(workspace.id, body?.target, body?.filePath);
+  }
+
+  @Get('simulate-rebuild/result')
+  async getSimulationResult(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<RebuildSimulationResult> {
+    const result = await this.rebuildSimulationService.getResult(workspace.id);
+    if (!result) throw new NotFoundException('No rebuild simulation has been run for this workspace');
+    return result;
+  }
+
+  @Post('cache-check')
+  @HttpCode(202)
+  startCacheCheck(
+    @CurrentWorkspace() workspace: WorkspaceDocument,
+    @Body() body: CacheCheckRequest,
+  ): Promise<CacheCheckResult> {
+    return this.cacheCheckService.startCacheCheck(workspace.id, body?.target);
+  }
+
+  @Get('cache-check/result')
+  async getCacheCheckResult(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<CacheCheckResult> {
+    const result = await this.cacheCheckService.getResult(workspace.id);
+    if (!result) throw new NotFoundException('No cache check has been run for this workspace');
     return result;
   }
 }

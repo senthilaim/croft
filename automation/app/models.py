@@ -38,3 +38,21 @@ class AnalyzeRepoRequest(BaseModel):
     repoUrl: str
     token: str
     branch: str
+
+
+class SimulateRebuildRequest(BaseModel):
+    workspaceId: str
+    repoUrl: str
+    token: str
+    branch: str
+    target: str
+    filePath: str
+
+
+class CacheCheckRequest(BaseModel):
+    workspaceId: str
+    repoUrl: str
+    token: str
+    branch: str
+    target: str
+    grpcPort: int

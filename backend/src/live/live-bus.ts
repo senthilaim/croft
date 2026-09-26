@@ -22,6 +22,22 @@ export class LiveBus {
   onRepoAnalysisChanged(listener: (workspaceId: string) => void): void {
     this.emitter.on('repoAnalysis', listener);
   }
+
+  rebuildSimulationChanged(workspaceId: string): void {
+    this.emitter.emit('rebuildSimulation', workspaceId);
+  }
+
+  onRebuildSimulationChanged(listener: (workspaceId: string) => void): void {
+    this.emitter.on('rebuildSimulation', listener);
+  }
+
+  cacheCheckChanged(workspaceId: string): void {
+    this.emitter.emit('cacheCheck', workspaceId);
+  }
+
+  onCacheCheckChanged(listener: (workspaceId: string) => void): void {
+    this.emitter.on('cacheCheck', listener);
+  }
 }
 
 @Global()

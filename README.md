@@ -362,6 +362,71 @@ fall back to a Bazel release chosen for supporting both `WORKSPACE` and `MODULE.
 tunable without a code change -- raise them if a large repository's analysis needs more than the
 defaults.
 
+## "Why did this rebuild?" — an incremental-build diagnosis tool
+
+Unpredictable incremental builds (a small change triggering a much bigger rebuild than expected) is
+a common, recognized Bazel pain point, and short of expert manual archaeology through `--explain`
+output there's no accessible way to answer "why does Bazel think this needs to rebuild." Once a
+repo has a successful analysis, the Analyze page's third step lets you ask exactly that for any
+target: give it a Bazel target label and a repo-relative file path, and it builds the target once
+(cold baseline), appends a single newline to that file (a real content-hash change -- a bare
+`touch` only updates mtime, which Bazel's source-file digest comparison ignores), builds the target
+again with `bazel build --explain=<file> --verbose_explanations`, and reports exactly which actions
+re-ran and Bazel's own stated reason for each.
+
+**How it works.** Both builds run inside one invocation of the *same* hardened sandbox container
+the repo-analysis feature uses (`automation/analysis-runner/simulate-entrypoint.sh`, launched by
+`automation/app/rebuild_simulation.py` -- same Docker hardening flags, same per-job network, same
+disk-backed output-base volume), deliberately in one container so Bazel's local action cache
+persists between the baseline and post-edit builds; splitting this across two separate `docker run`
+calls would make every action look like a cold cache miss on the second build too, which defeats
+the entire point. The `--explain` log is parsed by `automation/analysis-runner/explain_parser.py`
+into a rebuilt-action list, each classified as a real content/input **change** (what your edit
+triggers), an **unconditional** action that always re-executes regardless of any edit (e.g. the
+workspace-status action -- shown separately so it isn't mistaken for a consequence of your edit), a
+**new** (cold-cache) action, or **other**.
+
+**Be aware this runs a real build**, unlike repo analysis (`bazel query`, which never executes
+anything) -- it can fail for reasons specific to your target's toolchain requirements, not just for
+the reasons this tool is designed to explain; the UI says so at the trigger step. It reuses the
+same general failure-diagnosis engine as repo analysis (`analysis-diagnostics.ts`) for that case,
+and the same live-log-while-running / no-history-on-rerun conventions. The sandbox's resource
+limits for this job are separately tunable (`SIMULATION_CPU_LIMIT`, `SIMULATION_MEMORY_LIMIT`,
+`SIMULATION_PIDS_LIMIT`, `SIMULATION_TIMEOUT_SECONDS`; see `.env.example`) -- higher than the
+analysis job's defaults, since a real build (compilation) is heavier than `bazel query`.
+
+**Explicitly out of scope for now:** dependency-tightening analysis (recommending narrower `deps`
+to reduce unnecessary rebuilds), and config/baseline-transition bleed detection. Per-action cache
+visibility against a user's *real* provisioned Buildfarm -- the other item originally deferred here
+-- is no longer out of scope; see the next section.
+
+## "Does my remote cache actually work?" — validating the real Buildfarm
+
+A separate check, once a repo has a successful analysis and this workspace has a Buildfarm
+**currently running**: give it a Bazel target, and Croft builds it twice inside the sandbox --
+each build starting from a completely fresh local cache -- both pointed at this workspace's own,
+real remote cache (`--remote_cache`, never `--remote_executor`). The first build ("read check")
+reports what the Buildfarm already had cached for this target; the second ("round-trip check")
+re-runs the same build against the same cache, proving both write and read work end to end. Real
+per-action results come from Bazel's own `--execution_log_json_file` output (`cacheHit`,
+`remotable`, `remoteCacheable` per action -- a separate, stable mechanism from BEP, parsed by
+`automation/analysis-runner/cache_execution_log_parser.py`), not from `--explain`.
+
+**This is the one sandbox job in this app that intentionally breaks network isolation.** Every
+other sandboxed job here (repo analysis, rebuild simulation) has no path to any of Croft's own
+infrastructure -- this one does, on purpose, via `--add-host=host.docker.internal:host-gateway`, so
+it can reach the workspace's real, running Buildfarm server over the network
+(`automation/app/cache_check.py` has the full reasoning). The UI discloses this plainly, distinctly
+from the other two sandbox checks' own disclaimers, and requires an explicit opt-in checkbox before
+the trigger enables. `--remote_executor` is never set by this job -- validating cache reuse doesn't
+need real remote execution, and dispatching a repo's untrusted actions onto your real worker pool
+would be a materially bigger abuse surface for no benefit to what this feature answers. The check is
+hard-gated on the workspace's Buildfarm being `'running'` (fetched live, not a stale flag); when it
+isn't, the UI shows a disabled state linking to the designer instead of a bare disabled button. Its
+own resource-limit tier (`CACHE_CHECK_CPU_LIMIT`, `CACHE_CHECK_MEMORY_LIMIT`,
+`CACHE_CHECK_PIDS_LIMIT`, `CACHE_CHECK_TIMEOUT_SECONDS`; see `.env.example`) is independently
+tunable from the rebuild-simulation tier.
+
 ## Connecting your own project (execution platforms)
 
 The generated sample project is genrules and shell tests, which run anywhere. Real projects with

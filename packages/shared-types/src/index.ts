@@ -7,3 +7,5 @@ export * from "./infra.js";
 export * from "./cost.js";
 export * from "./files.js";
 export * from "./repo-analysis.js";
+export * from "./rebuild-simulation.js";
+export * from "./cache-check.js";
