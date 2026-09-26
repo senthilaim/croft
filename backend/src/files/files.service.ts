@@ -4,6 +4,7 @@ import type { FileContent, FileGroup, FileGroupId } from '@croft/shared-types';
 import { BuildfarmConfigService } from '../buildfarm-config/buildfarm-config.service.js';
 import { DEMO_FILES, type SourceFile } from '../demo/demo-source.js';
 import { DemoService } from '../demo/demo.service.js';
+import { computeBesIngestToken } from '../live/bes-ingest-token.js';
 import { ProvisioningService } from '../provisioning/provisioning.service.js';
 import {
   buildAlwaysFailsTestScript,
@@ -64,9 +65,10 @@ export class FilesService {
       const executionEnabled =
         (worker?.config as { executionEnabled?: boolean } | undefined)?.executionEnabled ?? true;
       const besPort = Number(this.configService.get<string>('BES_PORT', '9095'));
+      const besToken = computeBesIngestToken(workspaceId, this.configService.getOrThrow<string>('BES_INGEST_SECRET'));
       sample.push({
         path: '.bazelrc',
-        content: buildBazelrc(workspaceId, instance.ports.grpc, besPort, executionEnabled),
+        content: buildBazelrc(workspaceId, instance.ports.grpc, besPort, executionEnabled, besToken),
       });
     }
     groups.push({

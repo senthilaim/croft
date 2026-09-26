@@ -9,6 +9,7 @@ const base = {
   besPort: 9095,
   executionEnabled: true,
   selfHosted: true,
+  besToken: 'deadbeef',
 };
 
 describe('connect kit', () => {
@@ -17,6 +18,7 @@ describe('connect kit', () => {
     expect(rc).toContain('build:croft --remote_executor=grpc://croft.internal:20001');
     expect(rc).toContain('build:croft --bes_backend=grpc://croft.internal:9095');
     expect(rc).toContain('build:croft --bes_header=x-workspace-id=ws1');
+    expect(rc).toContain('build:croft --bes_header=x-workspace-token=deadbeef');
     expect(rc).not.toMatch(/^build --/m);
   });
 

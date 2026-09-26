@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ZipArchive } from 'archiver';
 import type { ConnectConfig, WorkerPlatform } from '@croft/shared-types';
+import { computeBesIngestToken } from '../live/bes-ingest-token.js';
 
 export function buildModuleBazel(): string {
   // sh_test moved out of native builtins into rules_shell in modern Bazel -- needed for the
@@ -169,6 +170,7 @@ export function buildBazelrc(
   grpcPort: number,
   besPort: number,
   executionEnabled: boolean,
+  besToken: string,
 ): string {
   const executorLine = executionEnabled
     ? `build --remote_executor=grpc://localhost:${grpcPort}\n`
@@ -182,6 +184,7 @@ export function buildBazelrc(
 # a plain "bazel build" reports live via Bazel's own Build Event Service mechanism.
 build --bes_backend=grpc://localhost:${besPort}
 build --bes_header=x-workspace-id=${workspaceId}
+build --bes_header=x-workspace-token=${besToken}
 build --bes_timeout=10s
 build --bes_upload_mode=nowait_for_upload_complete
 
@@ -190,6 +193,7 @@ build --bes_upload_mode=nowait_for_upload_complete
 ${executionEnabled ? `test --remote_executor=grpc://localhost:${grpcPort}\n` : ''}test --remote_cache=grpc://localhost:${grpcPort}
 test --bes_backend=grpc://localhost:${besPort}
 test --bes_header=x-workspace-id=${workspaceId}
+test --bes_header=x-workspace-token=${besToken}
 test --bes_timeout=10s
 test --bes_upload_mode=nowait_for_upload_complete
 # Lets Bazel's own intra-run retry detection ("flaky" status) kick in sometimes, on top of the
@@ -210,8 +214,9 @@ export function buildConnectConfig(
   besPort: number,
   executionEnabled: boolean,
   platform: WorkerPlatform | null,
+  besToken: string,
 ): ConnectConfig {
-  let bazelrc = buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled);
+  let bazelrc = buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled, besToken);
   let platformsBuild: string | null = null;
 
   if (executionEnabled && platform) {
@@ -334,7 +339,8 @@ export class SampleProjectService {
     platform: WorkerPlatform | null,
   ): ConnectConfig {
     const besPort = Number(this.configService.get<string>('BES_PORT', '9095'));
-    return buildConnectConfig(workspaceId, grpcPort, besPort, executionEnabled, platform);
+    const besToken = computeBesIngestToken(workspaceId, this.configService.getOrThrow<string>('BES_INGEST_SECRET'));
+    return buildConnectConfig(workspaceId, grpcPort, besPort, executionEnabled, platform, besToken);
   }
 
   createZip(
@@ -344,11 +350,12 @@ export class SampleProjectService {
     executionEnabled: boolean,
   ): ZipArchive {
     const besPort = Number(this.configService.get<string>('BES_PORT', '9095'));
+    const besToken = computeBesIngestToken(workspaceId, this.configService.getOrThrow<string>('BES_INGEST_SECRET'));
 
     const archive = new ZipArchive({ zlib: { level: 9 } });
     archive.append(buildModuleBazel(), { name: 'MODULE.bazel' });
     archive.append(buildBuildFile(), { name: 'BUILD.bazel' });
-    archive.append(buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled), { name: '.bazelrc' });
+    archive.append(buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled, besToken), { name: '.bazelrc' });
     archive.append(buildReadme(workspaceName, grpcPort, executionEnabled), { name: 'README.md' });
     // mode: 0o755 -- Bazel's sandbox runs sh_test srcs directly, so the script needs its
     // executable bit set inside the zip, not just readable.

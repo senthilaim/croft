@@ -7,6 +7,7 @@ import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
 import { ProvisioningService } from '../provisioning/provisioning.service.js';
 import { BuildfarmConfigService } from '../buildfarm-config/buildfarm-config.service.js';
+import { computeBesIngestToken } from '../live/bes-ingest-token.js';
 import { SampleProjectService } from './sample-project.service.js';
 import { buildConnectKit, isValidHost } from './connect-kit.js';
 import { ConfigService } from '@nestjs/config';
@@ -48,6 +49,7 @@ export class SampleProjectController {
       besPort: Number(this.configService.get<string>('BES_PORT', '9095')),
       executionEnabled,
       selfHosted: runner !== 'hosted',
+      besToken: computeBesIngestToken(workspace.id, this.configService.getOrThrow<string>('BES_INGEST_SECRET')),
     });
   }
 
