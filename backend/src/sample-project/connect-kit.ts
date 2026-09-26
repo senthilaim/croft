@@ -16,6 +16,8 @@ export interface ConnectKitInput {
   executionEnabled: boolean;
   /** GitHub Actions only: run on the repo's own runners instead of GitHub-hosted ones. */
   selfHosted: boolean;
+  /** Computed by the caller via computeBesIngestToken -- gates the BES ingest port. */
+  besToken: string;
 }
 
 /**
@@ -36,6 +38,7 @@ build:croft --remote_retries=3
 # Live build analytics in the Croft dashboard.
 build:croft --bes_backend=grpc://${i.host}:${i.besPort}
 build:croft --bes_header=x-workspace-id=${i.workspaceId}
+build:croft --bes_header=x-workspace-token=${i.besToken}
 build:croft --bes_timeout=10s
 build:croft --bes_upload_mode=nowait_for_upload_complete
 build:croft --build_metadata=ROLE=CI
@@ -134,7 +137,7 @@ export function buildConnectKit(i: ConnectKitInput): ConnectKit {
     );
   }
   warnings.push(
-    `The Buildfarm (port ${i.grpcPort}) and build-event (port ${i.besPort}) endpoints have no authentication yet. Keep them on a private network or VPN; do not expose them to the public internet.`,
+    `The Buildfarm remote-cache/executor endpoint (port ${i.grpcPort}) has no authentication yet -- keep it on a private network or VPN; do not expose it to the public internet. (The build-event port is authenticated with a per-workspace token embedded in this .bazelrc.)`,
   );
 
   return {
