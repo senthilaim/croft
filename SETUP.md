@@ -204,6 +204,37 @@ lsof -nP -iTCP:9095 -sTCP:LISTEN   # should show the automation service's Python
    dependency graph, and a suggested Buildfarm sizing linking to the Cost page. Only connect a repo
    you trust — it runs the repo's own build scripts, just in a hardened container.
 
+   Example: `https://github.com/bazelbuild/bazel-skylib` with any read-only PAT scoped to public
+   repos — small, fast to clone, and used for steps 14-15 below too.
+
+14. **Simulate a rebuild ("Why did this rebuild?")** — once analysis has succeeded, scroll to step
+   3 of the same Analyze tab. Enter a Bazel target label and a repo-relative file path, check the
+   amber disclaimer (this runs a real build, not just `bazel query`), and click **Simulate rebuild**.
+   Croft builds the target once, appends a newline to the file you named (a real content change),
+   builds it again with `--explain`, and shows exactly which actions re-ran and why.
+
+   Example (continuing from step 13's `bazel-skylib`): target `//:bzl_library`, file `BUILD`. You'll
+   see one rebuilt action (`BazelWorkspaceStatusAction`, category **Always runs** — every build
+   re-runs this one regardless of your edit) since `bzl_library` has no compiled sources. To see the
+   **Changed** category too, pick a repo with a `cc_library`/`cc_binary`/`go_binary` target instead
+   and point the file path at one of its real source files — the compile action for that file (and
+   anything linked from it) shows **Changed**, while unrelated compiles stay cached.
+
+15. **Check your remote cache ("Does my remote cache actually work?")** — step 4 of the Analyze tab.
+   Requires this workspace's Buildfarm to be **running** (see step 4 "Provision it" above, or
+   checklist row 7) — otherwise it shows a disabled state linking to the designer instead of a
+   button. Tick the red consent checkbox
+   (this one intentionally connects the sandbox to your real Buildfarm, unlike every other check on
+   the page), enter a target, and click **Check remote cache**. Croft builds the target twice, each
+   from a completely fresh local cache, both against this workspace's real remote cache, and reports
+   two numbers: what was already cached ("read check") and the same build re-run right after
+   ("round-trip check").
+
+   Example: same `//:bzl_library` target — expect **0/0** both times (nothing in it is remote-
+   cacheable). Against a target with real compiled actions, expect the round-trip number
+   meaningfully higher than the read-check number (the first build populates the cache, the second
+   proves it's actually being read back).
+
 ## 5. Verify every feature (acceptance checklist)
 
 Work through this top to bottom after a fresh install. Each row says what to do and what you must
@@ -238,8 +269,11 @@ you connect. In Docker mode replace `localhost:9000` checks with `docker compose
 | 23 | Demo run | On a workspace with no builds, open **Analytics** and click **Run demo**; open a failed row, the Test grid and Trends; then **Clear demo data** | About 44 invocations appear live (rows marked *Demo*), failures show a located fix, the Test grid flags a flaky test, Trends shows a cache warm-up; clearing returns the empty state |
 | 24 | File viewer | Open the **Files** tab; with the demo loaded, open a failed build and click **Open in viewer** | Deployed config, sample project and demo files list and open read-only with line numbers; the viewer opens on the failing line, highlighted; Copy and Download work |
 | 25 | Repo analysis | On the **Analyze** tab, connect a small public GitHub repo with a read-only PAT and click **Analyze repository** | Status flips live from running to succeeded with no refresh; histogram, external deps, package graph and a suggested worker count all show real data; Disconnect returns to the empty connect step |
-| 26 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
-| 27 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
+| 26 | Rebuild simulation ("Why did this rebuild?") | With repo analysis succeeded, enter a target (e.g. `//:bzl_library`) and a file path (e.g. `BUILD`), tick nothing extra, click **Simulate rebuild** | Status flips live to succeeded; a results table shows at least one rebuilt action with a Category (Changed / Always runs / New / Other) and Reason; log panel showed live output while running |
+| 27 | Cache check gate | With no Buildfarm running for this workspace, scroll to step 4 of Analyze | **Check remote cache** button is absent; a message says no running Buildfarm with a link to the designer |
+| 28 | Cache check ("Does my remote cache actually work?") | Provision the workspace's Buildfarm (row 7), return to Analyze step 4, tick the red consent checkbox, enter a target, click **Check remote cache** | Consent checkbox is required before the button enables; status flips live to succeeded; two stat tiles show read-check and round-trip hit counts/percentages; log panel showed live output while running |
+| 29 | Teardown | **Teardown** in the designer | Status `stopped`; `docker ps --filter name=workspace-<id>` is empty |
+| 30 | Persistence (Docker mode) | `./croft down && ./croft up`, sign in | Account, workspace and build history still there |
 
 **Quick automated smoke (optional):** `docker compose build && docker compose up -d --wait` then
 `curl -fsS http://localhost:3000/signup >/dev/null && echo OK` confirms the packaged stack starts.
@@ -250,7 +284,13 @@ workspace; 9-13 -> `--bes_backend` and `x-workspace-id` in `.bazelrc`, re-downlo
 project; 9 showing "Reconnecting" -> the WebSocket is blocked (proxy/backend restart), the page falls
 back to polling; 12 shows nothing on old builds -> only failures recorded after the diagnosis feature
 have a console log; 14 in Docker mode -> check `docker compose logs automation` for CAS read errors;
-21 stays "Waiting" -> the runner cannot reach the host/ports, or `--config=croft` was not passed.
+21 stays "Waiting" -> the runner cannot reach the host/ports, or `--config=croft` was not passed;
+26/28 report a `Failed` status instead of results -> open the log panel first (it's kept on failure)
+for the actual `bazel`/clone error, then check the **What went wrong** card underneath it; 26/28
+succeed but every table/tile reads zero -> expected for a Starlark-only target (e.g. `bzl_library`,
+`filegroup`) which has no compiled actions to report on -- rerun against a `cc_library`/`cc_binary`/
+`go_binary` target for a non-trivial result; 27's button never appears even after provisioning ->
+reload the Analyze page (Buildfarm status is fetched once on page load, not pushed live).
 
 ## 6. Stop everything
 
@@ -298,3 +338,5 @@ curl -X POST http://localhost:9000/teardown \
 | Build never shows up on the dashboard | Confirm the sample project's `.bazelrc` has `--bes_backend=grpc://localhost:9095` and `--bes_header=x-workspace-id=<this workspace's id>` (re-download the sample project if it's stale — ports/ids are baked in at download time). Confirm the automation service is running and port 9095 is listening (see step 3). |
 | `Address already in use` on port 9095 when starting automation | Another automation instance (or a stale process) is already bound to the BES port. `lsof -ti:9095 -sTCP:LISTEN \| xargs -r kill`, then restart `npm run dev:automation`. |
 | Builds land against the wrong (or a torn-down) workspace | The `.bazelrc` you're building with has a stale port/`x-workspace-id` baked in from an earlier download — e.g. your browser saved a repeat download as `buildfarm-sample-project-1.zip`/`-2.zip` and you unzipped the old one. Re-download from the workspace's **Get sample project** page and use that extracted copy. |
+| "Why did this rebuild?" or "Does my remote cache actually work?" times out on a large repo | Both have their own resource-limit tiers (`SIMULATION_*` and `CACHE_CHECK_*` respectively — see `.env.example`), separate from the plain repo-analysis tier (`ANALYSIS_*`), each defaulting higher since a real `bazel build` costs more than `bazel query`. Raise the `*_TIMEOUT_SECONDS`/`*_MEMORY_LIMIT` for whichever job is failing. |
+| Cache check fails immediately with "no running Buildfarm to check the cache against" | Its own explicit gate, not a bug — that job needs somewhere real to check the cache against. Provision the workspace's Buildfarm first (checklist row 7), then retry. |
