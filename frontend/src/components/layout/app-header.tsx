@@ -47,6 +47,11 @@ function tabsFor(pathname: string): Tab[] {
     { label: "Tests", href: `${base}/dashboard/tests`, active: (p) => p.startsWith(`${base}/dashboard/tests`) },
     { label: "Trends", href: `${base}/dashboard/trends`, active: (p) => p.startsWith(`${base}/dashboard/trends`) },
     { label: "Files", href: `${base}/files`, active: (p) => p.startsWith(`${base}/files`) },
+    {
+      label: "Settings",
+      href: `${base}/settings/members`,
+      active: (p) => p.startsWith(`${base}/settings`),
+    },
   ];
 }
 
