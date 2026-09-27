@@ -3,6 +3,7 @@ import type { Workspace, WorkspaceMember } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { MembersSettings } from "@/components/members-settings";
+import { SettingsTabs } from "@/components/settings-tabs";
 
 export default async function MembersSettingsPage({
   params,
@@ -28,12 +29,13 @@ export default async function MembersSettingsPage({
 
       <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <div>
-          <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">Members</h1>
+          <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">Settings</h1>
           <p className="mt-1 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
             Who can access this workspace, and what they can do. Owner and admin can invite people who
             already have a Croft account; only the owner can change someone&apos;s role.
           </p>
         </div>
+        <SettingsTabs workspaceId={workspaceId} active="members" />
         <MembersSettings
           workspaceId={workspaceId}
           myUserId={user.id}
