@@ -1,10 +1,12 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { WorkspaceRole } from '@croft/shared-types';
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { WorkspacesService } from './workspaces.service.js';
 import type { WorkspaceDocument } from './schemas/workspace.schema.js';
 
 export interface WorkspaceScopedRequest extends AuthenticatedRequest {
   workspace: WorkspaceDocument;
+  workspaceRole: WorkspaceRole;
 }
 
 @Injectable()
@@ -18,11 +20,13 @@ export class WorkspaceMembershipGuard implements CanActivate {
     const workspace = await this.workspacesService.findById(workspaceId);
     if (!workspace) throw new NotFoundException('Workspace not found');
 
-    if (!this.workspacesService.isMember(workspace, request.userId)) {
+    const role = this.workspacesService.getRole(workspace, request.userId);
+    if (!role) {
       throw new ForbiddenException('Not a member of this workspace');
     }
 
     request.workspace = workspace;
+    request.workspaceRole = role;
     return true;
   }
 }

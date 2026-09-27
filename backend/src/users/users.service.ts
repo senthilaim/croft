@@ -1,7 +1,17 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import type { User as UserDto } from '@croft/shared-types';
 import { User, UserDocument } from './schemas/user.schema.js';
+
+function toPublicUser(user: UserDocument): UserDto {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    createdAt: (user as UserDocument & { createdAt: Date }).createdAt.toISOString(),
+  };
+}
 
 @Injectable()
 export class UsersService {
@@ -24,5 +34,17 @@ export class UsersService {
 
   findById(id: string): Promise<UserDocument | null> {
     return this.userModel.findById(id).exec();
+  }
+
+  /** Safe for handing to a caller outside the account's own session (e.g. a workspace-invite
+   * lookup) -- never includes passwordHash, unlike the raw findByEmail/findById above. */
+  async findPublicByEmail(email: string): Promise<UserDto | null> {
+    const user = await this.findByEmail(email);
+    return user ? toPublicUser(user) : null;
+  }
+
+  async findPublicByIds(ids: string[]): Promise<UserDto[]> {
+    const users = await this.userModel.find({ _id: { $in: ids } }).exec();
+    return users.map(toPublicUser);
   }
 }
