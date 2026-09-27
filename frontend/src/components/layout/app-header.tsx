@@ -14,10 +14,28 @@ interface AppHeaderProps {
 
 const REPO = "https://github.com/senthilaim/croft";
 
+interface SubTab {
+  label: string;
+  href: string;
+  active: (path: string) => boolean;
+}
+
 interface Tab {
   label: string;
   href: string;
   active: (path: string) => boolean;
+  subTabs?: SubTab[];
+}
+
+// A group's own href/active point at its first sub-tab, so clicking it always goes somewhere real
+// and it highlights whenever the path matches any of its children.
+function group(label: string, subTabs: SubTab[]): Tab {
+  return {
+    label,
+    href: subTabs[0].href,
+    active: (p) => subTabs.some((s) => s.active(p)),
+    subTabs,
+  };
 }
 
 function tabsFor(pathname: string): Tab[] {
@@ -26,27 +44,54 @@ function tabsFor(pathname: string): Tab[] {
     return [{ label: "Workspaces", href: "/workspaces", active: () => true }];
   }
   const base = `/workspaces/${match[1]}`;
-  // Ordered to match the customer journey, not the order features shipped in:
-  // evaluate (Analyze) -> design + estimate (Designer, Cost) -> connect a project (Connect) ->
-  // operate (Analytics, Tests, Trends) -> reference (Files).
+  // Ordered to match the customer journey, not the order features shipped in: evaluate/design a
+  // Buildfarm -> connect real traffic to it -> monitor what runs -> analyze a repo against it.
+  // Each group after Overview carries its own sub-tab row (rendered below the primary nav).
   return [
-    {
-      label: "Overview",
-      href: base,
-      active: (p) => p === base || p.startsWith(`${base}/sample-project`),
-    },
-    { label: "Analyze", href: `${base}/analyze`, active: (p) => p.startsWith(`${base}/analyze`) },
-    { label: "Designer", href: `${base}/designer`, active: (p) => p.startsWith(`${base}/designer`) },
-    { label: "Cost", href: `${base}/cost`, active: (p) => p.startsWith(`${base}/cost`) },
-    { label: "Connect", href: `${base}/connect`, active: (p) => p.startsWith(`${base}/connect`) },
-    {
-      label: "Analytics",
-      href: `${base}/dashboard`,
-      active: (p) => p === `${base}/dashboard` || p.startsWith(`${base}/builds`),
-    },
-    { label: "Tests", href: `${base}/dashboard/tests`, active: (p) => p.startsWith(`${base}/dashboard/tests`) },
-    { label: "Trends", href: `${base}/dashboard/trends`, active: (p) => p.startsWith(`${base}/dashboard/trends`) },
-    { label: "Files", href: `${base}/files`, active: (p) => p.startsWith(`${base}/files`) },
+    { label: "Overview", href: base, active: (p) => p === base },
+    group("Design", [
+      { label: "Designer", href: `${base}/designer`, active: (p) => p.startsWith(`${base}/designer`) },
+      { label: "Cost", href: `${base}/cost`, active: (p) => p.startsWith(`${base}/cost`) },
+    ]),
+    group("Connect", [
+      {
+        label: "Sample project",
+        href: `${base}/sample-project`,
+        active: (p) => p.startsWith(`${base}/sample-project`),
+      },
+      { label: "Connect", href: `${base}/connect`, active: (p) => p.startsWith(`${base}/connect`) },
+    ]),
+    group("Monitor", [
+      {
+        label: "Analytics",
+        href: `${base}/dashboard`,
+        active: (p) => p === `${base}/dashboard` || p.startsWith(`${base}/builds`),
+      },
+      {
+        label: "Tests",
+        href: `${base}/dashboard/tests`,
+        active: (p) => p.startsWith(`${base}/dashboard/tests`),
+      },
+      {
+        label: "Trends",
+        href: `${base}/dashboard/trends`,
+        active: (p) => p.startsWith(`${base}/dashboard/trends`),
+      },
+      { label: "Files", href: `${base}/files`, active: (p) => p.startsWith(`${base}/files`) },
+    ]),
+    group("Analyze", [
+      { label: "Repo analysis", href: `${base}/analyze`, active: (p) => p === `${base}/analyze` },
+      {
+        label: "Why did this rebuild?",
+        href: `${base}/analyze/rebuild-simulation`,
+        active: (p) => p.startsWith(`${base}/analyze/rebuild-simulation`),
+      },
+      {
+        label: "Cache check",
+        href: `${base}/analyze/cache-check`,
+        active: (p) => p.startsWith(`${base}/analyze/cache-check`),
+      },
+    ]),
   ];
 }
 
@@ -79,6 +124,7 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
   const pathname = usePathname();
   const menuRef = useRef<HTMLDivElement>(null);
   const tabs = tabsFor(pathname);
+  const activeTab = tabs.find((tab) => tab.active(pathname));
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -111,7 +157,8 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
       .toUpperCase() || user.email[0].toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-black/10 bg-white/85 px-4 backdrop-blur-md sm:px-6 dark:border-white/10 dark:bg-zinc-950/85">
+    <header className="sticky top-0 z-30 flex shrink-0 flex-col border-b border-black/10 bg-white/85 backdrop-blur-md dark:border-white/10 dark:bg-zinc-950/85">
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 px-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <Link
           href="/workspaces"
@@ -248,6 +295,32 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
           )}
         </div>
       </div>
+      </div>
+
+      {activeTab?.subTabs && (
+        <nav
+          aria-label="Secondary"
+          className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto px-4 sm:px-6"
+        >
+          {activeTab.subTabs.map((sub) => {
+            const active = sub.active(pathname);
+            return (
+              <Link
+                key={sub.href}
+                href={sub.href}
+                aria-current={active ? "page" : undefined}
+                className={`whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-brand-soft text-brand dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-zinc-50"
+                }`}
+              >
+                {sub.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </header>
   );
 }

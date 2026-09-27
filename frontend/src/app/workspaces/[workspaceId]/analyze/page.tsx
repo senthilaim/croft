@@ -1,12 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import type {
-  BuildfarmInstance,
-  CacheCheckResult,
-  RebuildSimulationResult,
-  RepoAnalysisResult,
-  RepoConnection,
-  Workspace,
-} from "@croft/shared-types";
+import type { RepoAnalysisResult, RepoConnection, Workspace } from "@croft/shared-types";
 import { backendFetch, getCurrentUser } from "@/lib/session";
 import { AppHeader } from "@/components/layout/app-header";
 import { RepoAnalyzer } from "@/components/repo-analyzer";
@@ -29,25 +22,14 @@ export default async function AnalyzePage({
   const connection: RepoConnection | null = connectionRes.ok ? await connectionRes.json() : null;
 
   let analysis: RepoAnalysisResult | null = null;
-  let simulation: RebuildSimulationResult | null = null;
-  let cacheCheck: CacheCheckResult | null = null;
   if (connection) {
-    const [analysisRes, simulationRes, cacheCheckRes] = await Promise.all([
-      backendFetch(`/workspaces/${workspaceId}/repo-analysis/result`),
-      backendFetch(`/workspaces/${workspaceId}/repo-analysis/simulate-rebuild/result`),
-      backendFetch(`/workspaces/${workspaceId}/repo-analysis/cache-check/result`),
-    ]);
+    const analysisRes = await backendFetch(`/workspaces/${workspaceId}/repo-analysis/result`);
     if (analysisRes.ok) analysis = await analysisRes.json();
-    if (simulationRes.ok) simulation = await simulationRes.json();
-    if (cacheCheckRes.ok) cacheCheck = await cacheCheckRes.json();
   }
-
-  const buildfarmRes = await backendFetch(`/workspaces/${workspaceId}/buildfarm/status`);
-  const buildfarm: BuildfarmInstance | null = buildfarmRes.ok ? await buildfarmRes.json() : null;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <AppHeader user={user} breadcrumb={workspace ? `${workspace.name} / Analyze` : undefined} />
+      <AppHeader user={user} breadcrumb={workspace ? `${workspace.name} / Analyze / Repo analysis` : undefined} />
 
       <div className="flex w-full flex-col gap-6 px-4 py-8 sm:px-8 lg:px-10">
         <div>
@@ -58,14 +40,7 @@ export default async function AnalyzePage({
             dependency graph, and a suggested Buildfarm sizing.
           </p>
         </div>
-        <RepoAnalyzer
-          workspaceId={workspaceId}
-          initialConnection={connection}
-          initialAnalysis={analysis}
-          initialSimulation={simulation}
-          initialCacheCheck={cacheCheck}
-          buildfarmStatus={buildfarm?.status ?? null}
-        />
+        <RepoAnalyzer workspaceId={workspaceId} initialConnection={connection} initialAnalysis={analysis} />
       </div>
     </div>
   );
