@@ -15,6 +15,7 @@ import type {
 } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
+import { WorkspaceRoleGuard } from '../workspaces/workspace-role.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
 import { BuildfarmConfigService } from '../buildfarm-config/buildfarm-config.service.js';
@@ -29,7 +30,10 @@ export class ProvisioningController {
     private readonly buildfarmConfigService: BuildfarmConfigService,
   ) {}
 
+  // Spinning real infrastructure up/down is the most consequential action in the app -- the first
+  // (deliberately narrow, see the plan) place a 'viewer' role actually means something.
   @Post('submit')
+  @UseGuards(WorkspaceRoleGuard('owner', 'admin', 'member'))
   async submit(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<BuildfarmInstance> {
     const config = await this.buildfarmConfigService.getOrCreateDraft(workspace.id);
     const issues = validateTopology(config.nodes as unknown as BuildfarmNode[], config.edges);
@@ -53,6 +57,7 @@ export class ProvisioningController {
   }
 
   @Post('teardown')
+  @UseGuards(WorkspaceRoleGuard('owner', 'admin', 'member'))
   async teardown(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<BuildfarmInstance> {
     const instance = await this.provisioningService.teardown(workspace.id);
     await this.buildfarmConfigService.setStatus(workspace.id, 'stopped');

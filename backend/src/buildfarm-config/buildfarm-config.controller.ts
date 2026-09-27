@@ -2,6 +2,7 @@ import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
 import type { BuildfarmConfig } from '@croft/shared-types';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { WorkspaceMembershipGuard } from '../workspaces/workspace-membership.guard.js';
+import { WorkspaceRoleGuard } from '../workspaces/workspace-role.guard.js';
 import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
 import { BuildfarmConfigService, toBuildfarmConfigDto } from './buildfarm-config.service.js';
@@ -19,6 +20,7 @@ export class BuildfarmConfigController {
   }
 
   @Put()
+  @UseGuards(WorkspaceRoleGuard('owner', 'admin', 'member'))
   async save(
     @CurrentWorkspace() workspace: WorkspaceDocument,
     @Body() dto: SaveBuildfarmConfigDto,

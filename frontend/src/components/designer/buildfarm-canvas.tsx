@@ -102,9 +102,12 @@ interface BuildfarmCanvasProps {
   workspaceId: string;
   initialConfig: BuildfarmConfig;
   initialInstance: BuildfarmInstance | null;
+  /** Server-enforced on the actual save/submit/teardown endpoints (a viewer gets a 403 regardless)
+   * -- this just avoids a confusing "click it, get an error" experience for that role. */
+  canWrite: boolean;
 }
 
-function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmCanvasProps) {
+function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: BuildfarmCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<BuildfarmNodeData>>(
     initialConfig.nodes.map(toFlowNode),
   );
@@ -276,7 +279,8 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmC
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || !canWrite}
+                title={canWrite ? undefined : "Viewers can't change this workspace's design"}
                 className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium shadow transition-colors hover:bg-black/[.03] disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-white/[.05]"
               >
                 {saving ? "Saving…" : "Save configuration"}
@@ -284,7 +288,8 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmC
               {instance?.status === "running" ? (
                 <button
                   onClick={handleTeardown}
-                  disabled={tearingDown}
+                  disabled={tearingDown || !canWrite}
+                  title={canWrite ? undefined : "Viewers can't tear down this workspace's Buildfarm"}
                   className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
                   {tearingDown ? "Tearing down…" : "Teardown"}
@@ -292,13 +297,19 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance }: BuildfarmC
               ) : (
                 <button
                   onClick={handleSubmitSetup}
-                  disabled={submitting || issues.length > 0}
+                  disabled={submitting || issues.length > 0 || !canWrite}
+                  title={canWrite ? undefined : "Viewers can't provision this workspace's Buildfarm"}
                   className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
                   {submitting ? "Setting up…" : "Submit Setup"}
                 </button>
               )}
             </div>
+            {!canWrite && (
+              <span className="rounded bg-white/90 px-2 py-1 text-xs text-zinc-500 shadow dark:bg-zinc-900/90 dark:text-zinc-400">
+                You have view-only access to this workspace.
+              </span>
+            )}
 
             {saveMessage && (
               <span className="rounded bg-white/90 px-2 py-1 text-xs text-zinc-700 shadow dark:bg-zinc-900/90 dark:text-zinc-300">
