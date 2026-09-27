@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WorkspacesService } from './workspaces.service.js';
+import { FREE_PLAN_MEMBER_LIMIT, WorkspacesService } from './workspaces.service.js';
 import type { WorkspaceDocument } from './schemas/workspace.schema.js';
 
 // getRole() reads only ownerId/members/memberIds -- no Mongoose/DB interaction needed to unit
@@ -9,8 +9,9 @@ const service = new WorkspacesService({} as never, {} as never);
 function workspace(overrides: Partial<WorkspaceDocument>): WorkspaceDocument {
   return {
     ownerId: 'owner-1',
-    memberIds: [],
+    memberIds: ['owner-1'],
     members: [],
+    save: () => Promise.resolve(),
     ...overrides,
   } as WorkspaceDocument;
 }
@@ -44,5 +45,56 @@ describe('WorkspacesService.getRole', () => {
   it('returns null for someone with no relationship to the workspace at all', () => {
     const ws = workspace({ memberIds: ['owner-1'], members: [] });
     expect(service.getRole(ws, 'a-stranger')).toBeNull();
+  });
+});
+
+function serviceWithUser(user: { id: string; email: string; name: string } | null): WorkspacesService {
+  const usersService = { findPublicByEmail: () => Promise.resolve(user) };
+  return new WorkspacesService({} as never, usersService as never);
+}
+
+describe('WorkspacesService.inviteMember -- free-tier member cap', () => {
+  it('rejects the invite once a free-plan workspace is already at the cap (owner + 2)', async () => {
+    const svc = serviceWithUser({ id: 'new-user', email: 'new@example.com', name: 'New User' });
+    const ws = workspace({
+      members: [
+        { userId: 'm1', role: 'member' },
+        { userId: 'm2', role: 'member' },
+      ],
+    }); // 1 (owner) + 2 members == FREE_PLAN_MEMBER_LIMIT
+    expect(1 + ws.members.length).toBe(FREE_PLAN_MEMBER_LIMIT);
+
+    await expect(svc.inviteMember(ws, 'new@example.com', 'member')).rejects.toThrow(/free plan is limited/i);
+  });
+
+  it('allows the invite on a free-plan workspace below the cap', async () => {
+    const svc = serviceWithUser({ id: 'new-user', email: 'new@example.com', name: 'New User' });
+    const ws = workspace({ members: [{ userId: 'm1', role: 'member' }] }); // 1 + 1 == 2, below the cap
+
+    const updated = await svc.inviteMember(ws, 'new@example.com', 'member');
+
+    expect(updated.members.map((m) => m.userId)).toContain('new-user');
+  });
+
+  it('does not enforce a cap on a "team"-plan workspace', async () => {
+    const svc = serviceWithUser({ id: 'new-user', email: 'new@example.com', name: 'New User' });
+    const ws = workspace({
+      plan: 'team',
+      members: [
+        { userId: 'm1', role: 'member' },
+        { userId: 'm2', role: 'member' },
+      ],
+    });
+
+    const updated = await svc.inviteMember(ws, 'new@example.com', 'member');
+
+    expect(updated.members.map((m) => m.userId)).toContain('new-user');
+  });
+
+  it('rejects inviting an email with no matching Croft account', async () => {
+    const svc = serviceWithUser(null);
+    const ws = workspace({});
+
+    await expect(svc.inviteMember(ws, 'nobody@example.com', 'member')).rejects.toThrow(/no croft account/i);
   });
 });
