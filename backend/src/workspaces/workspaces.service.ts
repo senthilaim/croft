@@ -121,6 +121,39 @@ export class WorkspacesService {
     await this.syncMemberIds(workspace);
     return workspace;
   }
+
+  findByStripeCustomerId(customerId: string): Promise<WorkspaceDocument | null> {
+    return this.workspaceModel.findOne({ stripeCustomerId: customerId }).exec();
+  }
+
+  /** Called from the Stripe webhook's `checkout.session.completed` handler once a subscription is
+   * actually created -- the only place a workspace is promoted onto the 'team' plan. */
+  async activateTeamPlan(
+    workspaceId: string,
+    fields: { stripeCustomerId: string; stripeSubscriptionId: string; stripeSubscriptionStatus: string },
+  ): Promise<void> {
+    await this.workspaceModel.updateOne(
+      { _id: workspaceId },
+      {
+        $set: {
+          plan: 'team',
+          stripeCustomerId: fields.stripeCustomerId,
+          stripeSubscriptionId: fields.stripeSubscriptionId,
+          stripeSubscriptionStatus: fields.stripeSubscriptionStatus,
+        },
+      },
+    );
+  }
+
+  /** Called from the webhook's `customer.subscription.{updated,deleted}` handlers to keep a
+   * workspace's plan in sync with Stripe's own view of the subscription -- downgrades back to
+   * 'free' the moment the subscription is no longer active/trialing, rather than trusting the
+   * client to ever tell us. */
+  async syncSubscriptionStatus(workspace: WorkspaceDocument, status: string, isActive: boolean): Promise<void> {
+    workspace.stripeSubscriptionStatus = status;
+    workspace.plan = isActive ? 'team' : 'free';
+    await workspace.save();
+  }
 }
 
 export function toWorkspaceDto(workspace: WorkspaceDocument, role: WorkspaceRole): WorkspaceDto {
