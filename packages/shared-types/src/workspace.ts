@@ -3,6 +3,8 @@
  * places could disagree. */
 export type WorkspaceRole = "owner" | "admin" | "member" | "viewer";
 
+export type WorkspacePlan = "free" | "team";
+
 export interface Workspace {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ export interface Workspace {
   /** The requesting user's own role in this workspace. Only present on responses fetched by an
    * authenticated member (always true today, since every read is membership-gated). */
   myRole: WorkspaceRole;
+  plan: WorkspacePlan;
   createdAt: string;
 }
 

@@ -5,10 +5,19 @@ import type {
   UpdateMemberRoleRequest,
   Workspace as WorkspaceDto,
   WorkspaceMember,
+  WorkspacePlan,
   WorkspaceRole,
 } from '@croft/shared-types';
 import { UsersService } from '../users/users.service.js';
 import { Workspace, WorkspaceDocument } from './schemas/workspace.schema.js';
+
+// Owner + 2 -- a tunable constant, not a marketed number sprinkled across the codebase. The
+// 'team' plan (see billing module) has no enforced cap.
+export const FREE_PLAN_MEMBER_LIMIT = 3;
+
+export function getPlan(workspace: WorkspaceDocument): WorkspacePlan {
+  return workspace.plan ?? 'free';
+}
 
 @Injectable()
 export class WorkspacesService {
@@ -78,6 +87,12 @@ export class WorkspacesService {
     if (this.getRole(workspace, user.id)) {
       throw new BadRequestException('This person is already a member of this workspace.');
     }
+    const currentMemberCount = 1 + workspace.members.length; // + owner
+    if (getPlan(workspace) === 'free' && currentMemberCount >= FREE_PLAN_MEMBER_LIMIT) {
+      throw new BadRequestException(
+        `The free plan is limited to ${FREE_PLAN_MEMBER_LIMIT} members. Upgrade to Team in this workspace's Billing settings to invite more.`,
+      );
+    }
     workspace.members.push({ userId: user.id, role });
     await this.syncMemberIds(workspace);
     return workspace;
@@ -115,6 +130,7 @@ export function toWorkspaceDto(workspace: WorkspaceDocument, role: WorkspaceRole
     ownerId: workspace.ownerId,
     memberIds: workspace.memberIds,
     myRole: role,
+    plan: getPlan(workspace),
     createdAt: (workspace as WorkspaceDocument & { createdAt: Date }).createdAt.toISOString(),
   };
 }

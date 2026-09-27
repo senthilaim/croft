@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { WorkspaceRole } from '@croft/shared-types';
+import type { WorkspacePlan, WorkspaceRole } from '@croft/shared-types';
 
 export type WorkspaceDocument = HydratedDocument<Workspace>;
 
@@ -36,6 +36,21 @@ export class Workspace {
   // treating anyone in the legacy memberIds as a 'member' in that case, so no migration is needed.
   @Prop({ type: [WorkspaceMemberEntrySchema], default: [] })
   members!: WorkspaceMemberEntry[];
+
+  // Absent on any workspace created before billing existed -- treated as 'free' by the DTO mapper
+  // (toWorkspaceDto), not by a Mongoose-level default, so a document read straight from Mongo
+  // before that mapping runs doesn't silently claim a plan it was never actually given.
+  @Prop({ type: String, enum: ['free', 'team'] })
+  plan?: WorkspacePlan;
+
+  @Prop({ type: String, default: null })
+  stripeCustomerId!: string | null;
+
+  @Prop({ type: String, default: null })
+  stripeSubscriptionId!: string | null;
+
+  @Prop({ type: String, default: null })
+  stripeSubscriptionStatus!: string | null;
 }
 
 export const WorkspaceSchema = SchemaFactory.createForClass(Workspace);
