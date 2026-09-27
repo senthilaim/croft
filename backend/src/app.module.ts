@@ -17,6 +17,7 @@ import { FilesModule } from './files/files.module.js';
 import { DemoModule } from './demo/demo.module.js';
 import { CostModule } from './cost/cost.module.js';
 import { LiveModule } from './live/live.module.js';
+import { BillingModule } from './billing/billing.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { LiveModule } from './live/live.module.js';
     FilesModule,
     TokenCipherModule,
     RepoAnalysisModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
