@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { io, type Socket } from "socket.io-client";
 import {
   Background,
   Handle,
@@ -21,111 +20,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type {
-  AnalysisDiagnosis,
-  BuildfarmInstanceStatus,
-  CacheCheckResult,
-  RebuildSimulationResult,
-  RepoAnalysisResult,
-  RepoConnection,
-} from "@croft/shared-types";
+import type { RepoAnalysisResult, RepoConnection } from "@croft/shared-types";
 import { layoutPackageGraph } from "@/lib/package-graph-layout";
-
-const field =
-  "h-9 w-full rounded-lg border border-black/10 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100";
-const card =
-  "rounded-xl border border-black/10 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900";
-
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
-  return (
-    <section className={`${card} p-5`}>
-      <h2 className="mb-3 flex items-center gap-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-xs text-white">
-          {n}
-        </span>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function LogPanel({ text, failed }: { text: string | null; failed: boolean }) {
-  const ref = useRef<HTMLPreElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [text]);
-
-  return (
-    <div
-      className={`mt-3 overflow-hidden rounded-lg border ${
-        failed ? "border-red-200 dark:border-red-900/40" : "border-black/10 dark:border-white/10"
-      }`}
-    >
-      <div
-        className={`flex items-center justify-between border-b px-3 py-1.5 text-xs font-medium ${
-          failed
-            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
-            : "border-black/10 bg-black/[.03] text-zinc-600 dark:border-white/10 dark:bg-white/[.04] dark:text-zinc-300"
-        }`}
-      >
-        {failed ? "Sandbox log (why it failed)" : "Sandbox log — live"}
-      </div>
-      <pre
-        ref={ref}
-        className="max-h-56 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs text-zinc-700 dark:text-zinc-300"
-      >
-        {text || "Waiting for output…"}
-      </pre>
-    </div>
-  );
-}
-
-/** Shared block for both a failed run and a succeeded run that found nothing -- title, plain-
- * language summary, and concrete next steps when the failure matched a known class (see
- * backend/src/repo-analysis/analysis-diagnostics.ts), the raw sandbox log always underneath as
- * evidence, and a fallback to the plain error message when nothing matched. */
-function DiagnosisBlock({
-  diagnosis,
-  fallbackMessage,
-  logTail,
-}: {
-  diagnosis: AnalysisDiagnosis | null;
-  fallbackMessage: string | null;
-  logTail: string | null;
-}) {
-  return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/30">
-      {diagnosis ? (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-red-800 dark:text-red-300">{diagnosis.title}</p>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                diagnosis.selfServiceable
-                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
-                  : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-              }`}
-            >
-              {diagnosis.selfServiceable ? "Something to fix in your repo" : "Current Croft limitation"}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-red-700 dark:text-red-300">{diagnosis.summary}</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-red-700 dark:text-red-300">
-            {diagnosis.recommendedSteps.map((step, i) => (
-              <li key={i}>{step}</li>
-            ))}
-          </ol>
-        </>
-      ) : (
-        fallbackMessage && <p className="text-sm text-red-700 dark:text-red-300">{fallbackMessage}</p>
-      )}
-      <LogPanel text={logTail} failed />
-    </div>
-  );
-}
+import { useWorkspaceSocket } from "@/lib/use-workspace-socket";
+import { Step, LogPanel, DiagnosisBlock, field, card } from "./repo-analyzer/shared";
 
 interface GraphNodeData {
   label: string;
@@ -191,300 +89,17 @@ function PackageGraphView({ analysis }: { analysis: RepoAnalysisResult }) {
   );
 }
 
-const categoryLabel: Record<string, string> = {
-  changed: "Changed",
-  new: "New (cold build)",
-  unconditional: "Always runs",
-  other: "Other",
-};
-
-function RebuildSimulator({
-  workspaceId,
-  simulation,
-  setSimulation,
-}: {
-  workspaceId: string;
-  simulation: RebuildSimulationResult | null;
-  setSimulation: (r: RebuildSimulationResult) => void;
-}) {
-  const [target, setTarget] = useState("");
-  const [filePath, setFilePath] = useState("");
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const running = simulation?.status === "running";
-
-  async function handleSimulate(e: React.FormEvent) {
-    e.preventDefault();
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/repo-analysis/simulate-rebuild`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, filePath }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setStartError(body?.message ?? "Could not start the rebuild simulation.");
-        return;
-      }
-      setSimulation(body);
-    } catch {
-      setStartError("Could not reach the server.");
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  return (
-    <Step n={3} title='"Why did this rebuild?"'>
-      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        Builds a target once, makes a one-line edit to a file you choose, builds it again, and shows exactly
-        which actions re-ran and why — using Bazel&apos;s own <code>--explain</code> output.
-      </p>
-      <form onSubmit={handleSimulate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex flex-1 flex-col gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-          Target
-          <input
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-            placeholder="//lib:core"
-            className={`${field} font-mono`}
-            required
-          />
-        </label>
-        <label className="flex flex-1 flex-col gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-          File to edit (repo-relative)
-          <input
-            value={filePath}
-            onChange={(e) => setFilePath(e.target.value)}
-            placeholder="lib/core.cc"
-            className={`${field} font-mono`}
-            required
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={starting || running}
-          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
-        >
-          {running ? "Simulating…" : "Simulate rebuild"}
-        </button>
-      </form>
-      <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-        This runs a real build of the target you choose, inside the same hardened sandbox — it can fail for
-        reasons specific to your build&apos;s toolchain requirements, not just for the reasons this tool is
-        designed to explain.
-      </div>
-      {startError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{startError}</p>}
-
-      {running && <LogPanel text={simulation?.logTail ?? null} failed={false} />}
-      {simulation?.status === "failed" && (
-        <div className="mt-3">
-          <DiagnosisBlock
-            diagnosis={simulation.diagnosis}
-            fallbackMessage={simulation.errorMessage}
-            logTail={simulation.logTail}
-          />
-        </div>
-      )}
-      {simulation?.status === "succeeded" && (
-        <div className="mt-4">
-          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-            {simulation.totalActionsRebuilt} of {simulation.baselineTotalActions} actions rebuilt for{" "}
-            <span className="font-mono">{simulation.target}</span> after editing{" "}
-            <span className="font-mono">{simulation.filePath}</span>
-          </p>
-          {simulation.rebuiltActions.length > 0 ? (
-            <div className="mt-2 overflow-hidden rounded-lg border border-black/10 dark:border-white/10">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-black/[.03] text-zinc-600 dark:bg-white/[.04] dark:text-zinc-300">
-                  <tr>
-                    <th className="px-3 py-1.5 font-medium">Action</th>
-                    <th className="px-3 py-1.5 font-medium">Category</th>
-                    <th className="px-3 py-1.5 font-medium">Reason</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                  {simulation.rebuiltActions.map((a, i) => (
-                    <tr key={i}>
-                      <td className="px-3 py-1.5 font-mono text-zinc-800 dark:text-zinc-200">{a.description}</td>
-                      <td className="px-3 py-1.5 text-zinc-600 dark:text-zinc-400">
-                        {categoryLabel[a.category] ?? a.category}
-                      </td>
-                      <td className="px-3 py-1.5 text-zinc-600 dark:text-zinc-400">{a.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Nothing rebuilt — the edit to {simulation.filePath} didn&apos;t affect {simulation.target}.
-            </p>
-          )}
-        </div>
-      )}
-    </Step>
-  );
-}
-
-function CacheChecker({
-  workspaceId,
-  buildfarmStatus,
-  cacheCheck,
-  setCacheCheck,
-}: {
-  workspaceId: string;
-  buildfarmStatus: BuildfarmInstanceStatus | null;
-  cacheCheck: CacheCheckResult | null;
-  setCacheCheck: (r: CacheCheckResult) => void;
-}) {
-  const [target, setTarget] = useState("");
-  const [consented, setConsented] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
-  const running = cacheCheck?.status === "running";
-  const buildfarmRunning = buildfarmStatus === "running";
-
-  async function handleCheck(e: React.FormEvent) {
-    e.preventDefault();
-    setStarting(true);
-    setStartError(null);
-    try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/repo-analysis/cache-check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setStartError(body?.message ?? "Could not start the cache check.");
-        return;
-      }
-      setCacheCheck(body);
-    } catch {
-      setStartError("Could not reach the server.");
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  return (
-    <Step n={4} title="Does my remote cache actually work?">
-      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        Builds a target twice against this workspace&apos;s own, real, running Buildfarm&apos;s remote cache —
-        each build starts with a completely fresh local cache, so any reported hit is genuinely served by
-        your Buildfarm, not the sandbox&apos;s own disk.
-      </p>
-
-      <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-        <p className="font-medium">This is different from the checks above: it connects the sandbox to your infrastructure.</p>
-        <p className="mt-1">
-          Every other check on this page runs fully isolated from your systems. This one intentionally breaks
-          that isolation so it can reach your workspace&apos;s real, running Buildfarm over the network and
-          write real entries into its cache storage. It never dispatches remote execution — only cache reads
-          and writes.
-        </p>
-      </div>
-
-      {!buildfarmRunning ? (
-        <div className="rounded-lg border border-black/10 bg-black/[.02] px-3 py-2 text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[.03] dark:text-zinc-400">
-          This workspace has no running Buildfarm to check the cache against.{" "}
-          <Link href={`/workspaces/${workspaceId}/designer`} className="font-medium text-brand underline">
-            Provision one first →
-          </Link>
-        </div>
-      ) : (
-        <>
-          <label className="mb-3 flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-            <input
-              type="checkbox"
-              checked={consented}
-              onChange={(e) => setConsented(e.target.checked)}
-              className="mt-0.5"
-            />
-            I understand this connects the analysis sandbox to my running Buildfarm.
-          </label>
-          <form onSubmit={handleCheck} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="flex flex-1 flex-col gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-              Target
-              <input
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder="//lib:core"
-                className={`${field} font-mono`}
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={starting || running || !consented}
-              className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
-            >
-              {running ? "Checking…" : "Check remote cache"}
-            </button>
-          </form>
-        </>
-      )}
-      {startError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{startError}</p>}
-
-      {running && <LogPanel text={cacheCheck?.logTail ?? null} failed={false} />}
-      {cacheCheck?.status === "failed" && (
-        <div className="mt-3">
-          <DiagnosisBlock
-            diagnosis={cacheCheck.diagnosis}
-            fallbackMessage={cacheCheck.errorMessage}
-            logTail={cacheCheck.logTail}
-          />
-        </div>
-      )}
-      {cacheCheck?.status === "succeeded" && (
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className={`${card} px-4 py-3`}>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Existing cache (read check)</p>
-            <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-              {cacheCheck.readCheck.remoteCacheHits}/{cacheCheck.readCheck.cacheableActions}
-              <span className="ml-1 text-sm font-normal text-zinc-500 dark:text-zinc-400">
-                actions hit ({cacheCheck.readCheck.hitRatePercent}%)
-              </span>
-            </p>
-          </div>
-          <div className={`${card} px-4 py-3`}>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">After this check populated it (round-trip)</p>
-            <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-              {cacheCheck.roundTripCheck.remoteCacheHits}/{cacheCheck.roundTripCheck.cacheableActions}
-              <span className="ml-1 text-sm font-normal text-zinc-500 dark:text-zinc-400">
-                actions hit ({cacheCheck.roundTripCheck.hitRatePercent}%)
-              </span>
-            </p>
-          </div>
-        </div>
-      )}
-    </Step>
-  );
-}
-
 export function RepoAnalyzer({
   workspaceId,
   initialConnection,
   initialAnalysis,
-  initialSimulation,
-  initialCacheCheck,
-  buildfarmStatus,
 }: {
   workspaceId: string;
   initialConnection: RepoConnection | null;
   initialAnalysis: RepoAnalysisResult | null;
-  initialSimulation: RebuildSimulationResult | null;
-  initialCacheCheck: CacheCheckResult | null;
-  buildfarmStatus: BuildfarmInstanceStatus | null;
 }) {
   const [connection, setConnection] = useState(initialConnection);
   const [analysis, setAnalysis] = useState(initialAnalysis);
-  const [simulation, setSimulation] = useState(initialSimulation);
-  const [cacheCheck, setCacheCheck] = useState(initialCacheCheck);
-  const [connected, setConnected] = useState(false);
 
   const [repoUrl, setRepoUrl] = useState("");
   const [token, setToken] = useState("");
@@ -493,21 +108,9 @@ export function RepoAnalyzer({
   const [triggering, setTriggering] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  useEffect(() => {
-    if (!connection) return;
-    const socket: Socket = io({ path: "/ws", addTrailingSlash: false, transports: ["websocket"] });
-    socket.on("connect", () =>
-      socket.emit("subscribe", { workspaceId }, (ack?: { ok: boolean }) => setConnected(!!ack?.ok)),
-    );
-    socket.on("disconnect", () => setConnected(false));
-    socket.on("repoAnalysis", (next: RepoAnalysisResult) => setAnalysis(next));
-    socket.on("rebuildSimulation", (next: RebuildSimulationResult) => setSimulation(next));
-    socket.on("cacheCheck", (next: CacheCheckResult) => setCacheCheck(next));
-    return () => {
-      socket.emit("unsubscribe", { workspaceId });
-      socket.disconnect();
-    };
-  }, [workspaceId, connection]);
+  const connected = useWorkspaceSocket(workspaceId, {
+    repoAnalysis: (next) => setAnalysis(next as RepoAnalysisResult),
+  });
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
@@ -672,14 +275,6 @@ export function RepoAnalyzer({
 
           {analysis && analysis.status === "succeeded" && (
             <>
-              <RebuildSimulator workspaceId={workspaceId} simulation={simulation} setSimulation={setSimulation} />
-              <CacheChecker
-                workspaceId={workspaceId}
-                buildfarmStatus={buildfarmStatus}
-                cacheCheck={cacheCheck}
-                setCacheCheck={setCacheCheck}
-              />
-
               {analysis.totalTargets === 0 && analysis.warnings.length > 0 && (
                 <DiagnosisBlock
                   diagnosis={analysis.diagnosis}
@@ -772,6 +367,27 @@ export function RepoAnalyzer({
                 >
                   See full cost breakdown →
                 </Link>
+              </div>
+
+              <div className={`${card} p-4`}>
+                <h2 className="mb-1 text-sm font-medium text-zinc-800 dark:text-zinc-200">Go further</h2>
+                <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  Two more sandbox checks are available for this repo now that analysis has succeeded.
+                </p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <Link
+                    href={`/workspaces/${workspaceId}/analyze/rebuild-simulation`}
+                    className="text-sm font-medium text-brand underline"
+                  >
+                    Why did this rebuild? →
+                  </Link>
+                  <Link
+                    href={`/workspaces/${workspaceId}/analyze/cache-check`}
+                    className="text-sm font-medium text-brand underline"
+                  >
+                    Does my remote cache actually work? →
+                  </Link>
+                </div>
               </div>
             </>
           )}

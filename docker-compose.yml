@@ -35,6 +35,7 @@ services:
       AUTOMATION_SERVICE_URL: http://automation:9000
       AUTOMATION_INTERNAL_TOKEN: ${AUTOMATION_INTERNAL_TOKEN:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
       BES_PORT: "9095"
+      BES_INGEST_SECRET: ${BES_INGEST_SECRET:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -54,6 +55,7 @@ services:
       AUTOMATION_INTERNAL_TOKEN: ${AUTOMATION_INTERNAL_TOKEN:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
       BACKEND_URL: http://backend:4000/api
       BES_PORT: "9095"
+      BES_INGEST_SECRET: ${BES_INGEST_SECRET:?Run ./install.sh (or copy .env.example to .env and fill in the secrets)}
       PORT_RANGE_START: ${PORT_RANGE_START:-20000}
       # Bazel puts `localhost:<port>` in the event stream (the address your Bazel used). From inside
       # this container that has to be dialled through the host gateway instead.

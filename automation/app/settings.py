@@ -4,6 +4,10 @@ import os
 class Settings:
     mongodb_uri: str = os.environ.get("MONGODB_URI", "mongodb://localhost:27018/croft")
     internal_token: str = os.environ.get("AUTOMATION_INTERNAL_TOKEN", "change-me-internal-token")
+    # Gates the BES gRPC ingest port (see bes_server.py's _expected_workspace_token) -- unlike
+    # internal_token, this one has to be shared with the backend too, since the backend embeds a
+    # per-workspace token derived from it into every generated .bazelrc.
+    bes_ingest_secret: str = os.environ.get("BES_INGEST_SECRET", "change-me-bes-ingest-secret")
     port_range_start: int = int(os.environ.get("PORT_RANGE_START", "20000"))
     runtime_dir: str = os.environ.get("RUNTIME_DIR", "runtime")
     backend_url: str = os.environ.get("BACKEND_URL", "http://localhost:4000/api")

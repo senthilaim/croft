@@ -21,6 +21,8 @@ unreachable, etc).
 """
 
 import gzip
+import hashlib
+import hmac
 import io
 import json
 import logging
@@ -44,6 +46,7 @@ from .settings import settings
 log = logging.getLogger("bes_server")
 
 WORKSPACE_HEADER = "x-workspace-id"
+WORKSPACE_TOKEN_HEADER = "x-workspace-token"
 STDERR_BUFFER_LIMIT = 8000
 ACTION_LOG_READ_CAP = 200_000  # bytes, per stdout/stderr file
 PROFILE_READ_CAP = 20_000_000  # bytes, the gzipped trace profile
@@ -370,15 +373,39 @@ def _event_to_json(event: "bes_pb2.BuildEvent", state: _InvocationState) -> dict
     return None
 
 
+def _expected_workspace_token(workspace_id: str) -> str:
+    """Deterministic per-workspace token: HMAC-SHA256(BES_INGEST_SECRET, workspaceId). No storage
+    or generation step needed -- both sides (this function, and connect-kit.ts/sample-project's
+    .bazelrc generators on the backend) compute the same value independently from the same shared
+    secret, the same way AUTOMATION_INTERNAL_TOKEN already gates the HTTP routes, just made
+    per-workspace here since this port is meant to be reachable by a workspace's own CI runners,
+    not just from the same machine."""
+    return hmac.new(settings.bes_ingest_secret.encode(), workspace_id.encode(), hashlib.sha256).hexdigest()
+
+
+def _verify_workspace_token(metadata: dict, context: grpc.ServicerContext) -> str:
+    """Returns the workspace id on success; aborts the RPC (UNAUTHENTICATED) and never returns on
+    failure. Called at the very start of every RPC this service exposes -- before anything the
+    caller sent is trusted or acted on."""
+    workspace_id = metadata.get(WORKSPACE_HEADER, "")
+    token = metadata.get(WORKSPACE_TOKEN_HEADER, "")
+    if not workspace_id or not token or not hmac.compare_digest(token, _expected_workspace_token(workspace_id)):
+        log.warning("rejected BES event stream for workspace %r: missing or invalid workspace token", workspace_id)
+        context.abort(grpc.StatusCode.UNAUTHENTICATED, "missing or invalid workspace token")
+    return workspace_id
+
+
 class PublishBuildEventServicer(pb2_grpc.PublishBuildEventServicer):
     def PublishLifecycleEvent(self, request, context):
-        # We don't need lifecycle events (BuildEnqueued/InvocationAttempt*) for anything --
-        # just ack so Bazel doesn't treat --bes_lifecycle_events as failing.
+        # Same trust boundary as the event stream below, even though this RPC doesn't act on
+        # workspace_id today (Bazel calls both with --bes_lifecycle_events) -- leaving one of the
+        # two RPCs on this service open would be an inconsistent, easy-to-miss gap.
+        _verify_workspace_token(dict(context.invocation_metadata()), context)
         return empty_pb2.Empty()
 
     def PublishBuildToolEventStream(self, request_iterator, context):
         metadata = dict(context.invocation_metadata())
-        workspace_id = metadata.get(WORKSPACE_HEADER, "")
+        workspace_id = _verify_workspace_token(metadata, context)
 
         seen_invocations: set[str] = set()
         try:

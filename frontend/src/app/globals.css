@@ -4,7 +4,7 @@
    layout.tsx from the user's saved choice or the OS preference), not by the media query. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Enterprise palette: cool slate neutrals + a deep indigo-blue brand. Remapping the neutral scale
+/* Enterprise palette: cool slate neutrals + a deep teal-green brand. Remapping the neutral scale
    (and black) here re-themes every existing utility class without touching each component. */
 @theme {
   --color-zinc-50: #f4f6fa;
@@ -20,9 +20,11 @@
   --color-zinc-950: #0a1120;
   --color-black: #0b1324;
 
-  --color-brand: #2350d8;
-  --color-brand-hover: #1a3fb3;
-  --color-brand-soft: #e8eeff;
+  /* Deliberately teal-leaning, not a pure/yellow green -- --status-good below is already a pure
+     success green, and the brand color needs to stay visually distinct from a status indicator. */
+  --color-brand: #0e6b5c;
+  --color-brand-hover: #0a5449;
+  --color-brand-soft: #e2f3ef;
 }
 
 @theme inline {
@@ -42,7 +44,7 @@
   --chart-muted: #8390a6;
   --chart-grid: #e3e8f0;
   --chart-axis: #c5cddb;
-  --chart-sequential: #2350d8;
+  --chart-sequential: #0e6b5c;
   --status-good: #0d8a4b;
   --status-warning: #f2a516;
   --status-critical: #c8352f;
@@ -63,7 +65,7 @@
   --chart-muted: #8390a6;
   --chart-grid: #22304d;
   --chart-axis: #2f3f61;
-  --chart-sequential: #5b8cff;
+  --chart-sequential: #22c2a3;
   --status-good: #2fbf71;
   --status-warning: #f5b93a;
   --status-critical: #ef6b65;
@@ -72,9 +74,9 @@
   --chart-categorical-2: #f0763f;
   --chart-categorical-3: #2ec48c;
 
-  --color-brand: #4c7bf4;
-  --color-brand-hover: #6a91f7;
-  --color-brand-soft: #16264d;
+  --color-brand: #22c2a3;
+  --color-brand-hover: #4ad0b8;
+  --color-brand-soft: #103a33;
 }
 
 body {
@@ -89,7 +91,7 @@ body {
 }
 
 .bg-brand-panel {
-  background: linear-gradient(155deg, #16265a 0%, #2350d8 100%);
+  background: linear-gradient(155deg, #0a2b25 0%, #0e6b5c 100%);
 }
 
 /* Smooth colour change when toggling theme, but not on first paint. */
