@@ -1,1 +1,7 @@
+# Test-only dependencies -- not installed in the shipped image (Dockerfile only installs
+# requirements.txt). Run tests locally with:
+#   pip install -r requirements.txt -r requirements-dev.txt && pytest
+-r requirements.txt
 pytest>=8.3
+moto[sts]>=5.0
+mongomock>=4.1

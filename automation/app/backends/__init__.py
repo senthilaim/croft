@@ -13,13 +13,15 @@ from typing import Protocol
 
 from pymongo.database import Database
 
-from ..models import ProvisionRequest
+from ..models import AwsCredential, ProvisionRequest
 
 
 class ProvisioningBackend(Protocol):
     def provision(self, request: ProvisionRequest, db: Database) -> dict: ...
 
-    def teardown(self, workspace_id: str, db: Database) -> dict: ...
+    # aws_credential is unused by DockerBackend (accepted for Protocol symmetry with AwsBackend,
+    # which needs a fresh STS session to run `terraform destroy`) -- see models.AwsCredential.
+    def teardown(self, workspace_id: str, db: Database, aws_credential: AwsCredential | None = None) -> dict: ...
 
     def status(self, workspace_id: str, db: Database, existing: dict) -> dict: ...
 
@@ -39,6 +41,8 @@ def save_instance(
     last_error: str | None = None,
     platform: dict | None = None,
     compose_project_name: str | None = None,
+    terraform_state: str | None = None,
+    terraform_vars: dict | None = None,
 ) -> dict:
     """Writes a `buildfarm_instances` document in the shape backend/src ...
     packages/shared-types/src/buildfarm-instance.ts describes -- shared by every backend, not
@@ -46,6 +50,11 @@ def save_instance(
     composeProjectName/containerIds regardless of provider). `host` is left unset (-> None/null)
     for Docker, matching the shared type's "null for Docker, callers fall back to localhost"
     contract -- never write the string "localhost" here, the frontend/backend own that fallback.
+
+    terraform_state/terraform_vars (AwsBackend only) are stored but deliberately excluded from the
+    returned/response document below -- they're internal bookkeeping (a multi-KB state blob, and
+    the exact var values used to apply it), not part of BuildfarmInstance's public shape, and have
+    no reason to round-trip to the frontend on every status poll.
     """
     doc: dict = {
         "workspaceId": workspace_id,
@@ -65,13 +74,19 @@ def save_instance(
         doc["ports"] = {"grpc": grpc_port}
     if platform is not None:
         doc["platform"] = platform
+    if terraform_state is not None:
+        doc["terraformState"] = terraform_state
+    if terraform_vars is not None:
+        doc["terraformVars"] = terraform_vars
 
     db.buildfarm_instances.find_one_and_update(
         {"workspaceId": workspace_id},
         {"$set": doc},
         upsert=True,
     )
-    return db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0})
+    return db.buildfarm_instances.find_one(
+        {"workspaceId": workspace_id}, {"_id": 0, "terraformState": 0, "terraformVars": 0}
+    )
 
 
 def get_backend(provider: str) -> ProvisioningBackend:
@@ -79,9 +94,10 @@ def get_backend(provider: str) -> ProvisioningBackend:
     # backend's own dependencies (e.g. AwsBackend's boto3) to be installed just to provision
     # Docker -- matches the optional-integration spirit already used for Stripe/OIDC elsewhere in
     # this app, applied here to a Python service instead of NestJS.
+    from .aws_backend import AwsBackend
     from .docker_backend import DockerBackend
 
-    backends: dict[str, ProvisioningBackend] = {"docker": DockerBackend()}
+    backends: dict[str, ProvisioningBackend] = {"docker": DockerBackend(), "aws": AwsBackend()}
     if provider not in backends:
         raise ValueError(f"Unknown or unsupported provisioning provider: {provider!r}")
     return backends[provider]

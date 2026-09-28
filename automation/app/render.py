@@ -44,3 +44,12 @@ def render_docker_compose_yml(
         worker_memory_mb=int(worker_cfg.get("memoryLimitMb", 1024)),
         redis_memory_mb=int(redis_cfg.get("memoryLimitMb", 256)),
     )
+
+
+def render_aws_user_data(compose_yml: str) -> str:
+    """Wraps the exact same docker-compose.yml render_docker_compose_yml() produces for Docker in
+    a small EC2 bootstrap script. Terraform only owns what AWS resources exist, not how Buildfarm's
+    containers start, so nothing Bazel/Buildfarm-specific gets re-expressed in HCL -- see
+    AwsBackend.provision()."""
+    template = _env.get_template("aws-user-data.sh.j2")
+    return template.render(compose_yml=compose_yml)

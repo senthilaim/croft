@@ -21,8 +21,16 @@ automation/**/__pycache__/
 automation/**/*.pyc
 automation/app/generated/
 
-# runtime data generated per workspace (docker-compose + buildfarm configs)
+# runtime data generated per workspace (docker-compose + buildfarm configs, and per-workspace
+# terraform working directories -- see automation/app/terraform_manager.py)
 automation/runtime/
+
+# terraform init/plan artifacts under the shared module -- never committed, and never how state is
+# persisted between runs either (that's checkpointed into MongoDB, see terraform_manager.py)
+automation/terraform/**/.terraform/
+automation/terraform/**/.terraform.lock.hcl
+automation/terraform/**/terraform.tfstate*
+automation/terraform/**/*.tfvars.json
 
 # logs
 *.log

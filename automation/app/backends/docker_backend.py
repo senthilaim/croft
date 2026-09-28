@@ -3,7 +3,7 @@ from pymongo.database import Database
 
 from .. import docker_manager, render
 from ..docker_manager import ComposeError
-from ..models import ProvisionRequest
+from ..models import AwsCredential, ProvisionRequest
 from ..port_allocator import allocate_port, reallocate_port
 from ..topology import InvalidTopologyError, parse_topology
 from . import save_instance
@@ -99,7 +99,10 @@ class DockerBackend:
             compose_project_name=project_name,
         )
 
-    def teardown(self, workspace_id: str, db: Database) -> dict:
+    def teardown(self, workspace_id: str, db: Database, aws_credential: AwsCredential | None = None) -> dict:
+        # aws_credential is AwsBackend-only (Protocol symmetry, see backends/__init__.py); Docker
+        # teardown needs no credentials.
+        del aws_credential
         project_name = project_name_for(workspace_id)
         path = docker_manager.project_dir(workspace_id)
 

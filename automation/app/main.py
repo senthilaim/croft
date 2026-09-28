@@ -87,7 +87,7 @@ def teardown(request: TeardownRequest, db: Database = Depends(get_db)):
     # erroring, matching the existing tolerant-of-already-gone behavior.
     provider = existing.get("provider", "docker") if existing else "docker"
     backend = get_backend(provider)
-    return backend.teardown(workspace_id, db)
+    return backend.teardown(workspace_id, db, aws_credential=request.awsCredential)
 
 
 @app.get("/infra/{workspace_id}", dependencies=[Depends(require_internal_token)])
