@@ -25,6 +25,11 @@ class BuildfarmEdge(BaseModel):
 
 class ProvisionRequest(BaseModel):
     workspaceId: str
+    # Defaulted so any caller not yet updated -- including the existing test suite -- keeps
+    # working unchanged. TeardownRequest/status/infra don't carry this: the provider is read back
+    # from the buildfarm_instances document written at provision time instead, so a caller never
+    # has to remember which provider a workspace used.
+    provider: Literal["docker", "aws"] = "docker"
     nodes: list[BuildfarmNode]
     edges: list[BuildfarmEdge]
 
