@@ -9,7 +9,7 @@ export class BuildTargetEntry {
   @Prop({ required: true })
   label!: string;
 
-  @Prop({ required: true, enum: ['running', 'success', 'failure'] })
+  @Prop({ type: String, required: true, enum: ['running', 'success', 'failure'] })
   status!: BuildStatus;
 
   @Prop({ required: true, default: 0 })
@@ -105,7 +105,7 @@ export class Build {
   @Prop({ type: String, default: null })
   endTime!: string | null;
 
-  @Prop({ required: true, enum: ['running', 'success', 'failure'] })
+  @Prop({ type: String, required: true, enum: ['running', 'success', 'failure'] })
   status!: BuildStatus;
 
   @Prop({ type: [BuildTargetSchema], default: [] })

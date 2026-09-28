@@ -20,7 +20,8 @@ import { CurrentWorkspace } from '../workspaces/current-workspace.decorator.js';
 import type { WorkspaceDocument } from '../workspaces/schemas/workspace.schema.js';
 import { BuildfarmConfigService } from '../buildfarm-config/buildfarm-config.service.js';
 import { validateTopology } from '../buildfarm-config/buildfarm-topology.js';
-import { ProvisioningService } from './provisioning.service.js';
+import { CloudCredentialsService } from '../cloud-credentials/cloud-credentials.service.js';
+import { ProvisioningService, type AwsCredentialPayload } from './provisioning.service.js';
 
 @Controller('workspaces/:id/buildfarm')
 @UseGuards(JwtAuthGuard, WorkspaceMembershipGuard)
@@ -28,6 +29,7 @@ export class ProvisioningController {
   constructor(
     private readonly provisioningService: ProvisioningService,
     private readonly buildfarmConfigService: BuildfarmConfigService,
+    private readonly cloudCredentialsService: CloudCredentialsService,
   ) {}
 
   // Spinning real infrastructure up/down is the most consequential action in the app -- the first
@@ -41,12 +43,30 @@ export class ProvisioningController {
       throw new BadRequestException({ message: 'Invalid buildfarm topology', issues });
     }
 
+    let awsCredential: AwsCredentialPayload | undefined;
+    if (config.provider === 'aws') {
+      const decrypted = await this.cloudCredentialsService.getDecryptedSecret(workspace.id);
+      if (!decrypted) {
+        throw new BadRequestException('Connect an AWS account under Settings > Cloud before provisioning');
+      }
+      awsCredential = {
+        roleArn: decrypted.doc.roleArn,
+        externalId: decrypted.doc.externalId,
+        bootstrapAccessKeyId: decrypted.doc.bootstrapAccessKeyId,
+        bootstrapSecretAccessKey: decrypted.bootstrapSecretAccessKey,
+        region: decrypted.doc.region,
+        allowedIngressCidrs: decrypted.doc.allowedIngressCidrs,
+      };
+    }
+
     await this.buildfarmConfigService.setStatus(workspace.id, 'provisioning');
     try {
       const instance = await this.provisioningService.submit(
         workspace.id,
+        config.provider,
         config.nodes as unknown as BuildfarmNode[],
         config.edges,
+        awsCredential,
       );
       await this.buildfarmConfigService.setStatus(workspace.id, instance.status);
       return instance;
@@ -59,7 +79,22 @@ export class ProvisioningController {
   @Post('teardown')
   @UseGuards(WorkspaceRoleGuard('owner', 'admin', 'member'))
   async teardown(@CurrentWorkspace() workspace: WorkspaceDocument): Promise<BuildfarmInstance> {
-    const instance = await this.provisioningService.teardown(workspace.id);
+    // Which credential (if any) to send is decided here, not by asking automation first -- a
+    // Docker workspace never has one connected, and automation's own persisted buildfarm_instances
+    // document (not this request) is what actually decides which backend handles the teardown.
+    const decrypted = await this.cloudCredentialsService.getDecryptedSecret(workspace.id);
+    const awsCredential: AwsCredentialPayload | undefined = decrypted
+      ? {
+          roleArn: decrypted.doc.roleArn,
+          externalId: decrypted.doc.externalId,
+          bootstrapAccessKeyId: decrypted.doc.bootstrapAccessKeyId,
+          bootstrapSecretAccessKey: decrypted.bootstrapSecretAccessKey,
+          region: decrypted.doc.region,
+          allowedIngressCidrs: decrypted.doc.allowedIngressCidrs,
+        }
+      : undefined;
+
+    const instance = await this.provisioningService.teardown(workspace.id, awsCredential);
     await this.buildfarmConfigService.setStatus(workspace.id, 'stopped');
     return instance;
   }

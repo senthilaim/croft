@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { BuildfarmConfigStatus, BuildfarmNodeType } from '@croft/shared-types';
+import type { BuildfarmConfigStatus, BuildfarmNodeType, BuildfarmProvider } from '@croft/shared-types';
 
 export type BuildfarmConfigDocument = HydratedDocument<BuildfarmConfig>;
 
@@ -19,7 +19,7 @@ export class BuildfarmNode {
   @Prop({ required: true })
   id!: string;
 
-  @Prop({ required: true, enum: ['server', 'worker', 'redis', 'cache'] })
+  @Prop({ type: String, required: true, enum: ['server', 'worker', 'redis', 'cache'] })
   type!: BuildfarmNodeType;
 
   @Prop({ type: BuildfarmNodePositionSchema, required: true })
@@ -48,6 +48,13 @@ export class BuildfarmConfig {
   @Prop({ required: true, unique: true })
   workspaceId!: string;
 
+  // Absent on every design saved before this field existed -- treated as 'docker' by the schema
+  // default (not a migration), matching how `plan`/`authProvider` were handled for Stripe/OIDC.
+  // A whole-design choice, not per-node: nodes must reach each other directly, so mixing a
+  // Docker-local node with an AWS one isn't a coherent network.
+  @Prop({ type: String, enum: ['docker', 'aws'], default: 'docker' })
+  provider!: BuildfarmProvider;
+
   @Prop({ type: [BuildfarmNodeSchema], default: [] })
   nodes!: BuildfarmNode[];
 
@@ -55,6 +62,7 @@ export class BuildfarmConfig {
   edges!: BuildfarmEdge[];
 
   @Prop({
+    type: String,
     required: true,
     enum: ['draft', 'provisioning', 'running', 'error', 'stopped'],
     default: 'draft',

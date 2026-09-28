@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+
+# Distro-portable install (works across whatever AMI the module's data.aws_ami resolves to),
+# rather than a package-manager-specific install -- same reasoning as the Docker backend using the
+# docker CLI/compose plugin directly instead of relying on distro packages.
+curl -fsSL https://get.docker.com | sh
+
+mkdir -p /opt/buildfarm
+cat > /opt/buildfarm/docker-compose.yml <<'CROFT_COMPOSE_EOF'
+{{ compose_yml }}
+CROFT_COMPOSE_EOF
+
+cd /opt/buildfarm
+docker compose up -d

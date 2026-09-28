@@ -11,3 +11,4 @@ export * from "./rebuild-simulation.js";
 export * from "./cache-check.js";
 export * from "./billing.js";
 export * from "./oidc.js";
+export * from "./cloud-credential.js";

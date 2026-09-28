@@ -4,7 +4,9 @@ import { Model } from 'mongoose';
 import type {
   BuildfarmConfig as BuildfarmConfigDto,
   BuildfarmConfigStatus,
+  BuildfarmProvider,
 } from '@croft/shared-types';
+import { assertAwsInstanceTypesAllowed } from './aws-instance-types.js';
 import {
   BuildfarmConfig,
   BuildfarmConfigDocument,
@@ -22,18 +24,27 @@ export class BuildfarmConfigService {
   async getOrCreateDraft(workspaceId: string): Promise<BuildfarmConfigDocument> {
     const existing = await this.buildfarmConfigModel.findOne({ workspaceId }).exec();
     if (existing) return existing;
-    return this.buildfarmConfigModel.create({ workspaceId, nodes: [], edges: [], status: 'draft' });
+    return this.buildfarmConfigModel.create({
+      workspaceId,
+      provider: 'docker',
+      nodes: [],
+      edges: [],
+      status: 'draft',
+    });
   }
 
   async save(
     workspaceId: string,
+    provider: BuildfarmProvider,
     nodes: BuildfarmNode[],
     edges: BuildfarmEdge[],
   ): Promise<BuildfarmConfigDocument> {
+    assertAwsInstanceTypesAllowed(provider, nodes);
+
     const updated = await this.buildfarmConfigModel
       .findOneAndUpdate(
         { workspaceId },
-        { workspaceId, nodes, edges, status: 'draft' },
+        { workspaceId, provider, nodes, edges, status: 'draft' },
         { new: true, upsert: true },
       )
       .exec();
@@ -49,6 +60,7 @@ export function toBuildfarmConfigDto(doc: BuildfarmConfigDocument): BuildfarmCon
   return {
     id: doc.id,
     workspaceId: doc.workspaceId,
+    provider: doc.provider,
     nodes: doc.nodes as unknown as BuildfarmConfigDto['nodes'],
     edges: doc.edges,
     status: doc.status,

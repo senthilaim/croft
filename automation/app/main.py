@@ -10,28 +10,27 @@ from . import (
     bes_server,
     cache_check,
     cas_client,
-    docker_manager,
+    credentials,
     infra_sampler,
     rebuild_simulation,
-    render,
     repo_analysis,
 )
 from .auth import require_internal_token
+from .backends import get_backend
 from .cache_check import CacheCheckError
+from .credentials import CredentialValidationError
 from .db import get_db
-from .docker_manager import ComposeError
 from .models import (
     AnalyzeRepoRequest,
     CacheCheckRequest,
     ProvisionRequest,
     SimulateRebuildRequest,
     TeardownRequest,
+    ValidateCredentialRequest,
 )
 from .rebuild_simulation import SimulationError
 from .repo_analysis import AnalysisError
-from .port_allocator import allocate_port, reallocate_port
 from .settings import settings
-from .topology import InvalidTopologyError, parse_topology
 
 app = FastAPI(title="Bazel Bootstrap Automation Service")
 
@@ -49,137 +48,55 @@ def _start_background_services() -> None:
     infra_sampler.start_in_background()
 
 
-def project_name_for(workspace_id: str) -> str:
-    return f"workspace-{workspace_id}"
-
-
-def summarize_status(ps_entries: list[dict]) -> str:
-    if not ps_entries:
-        return "stopped"
-    states = {entry.get("State", "").lower() for entry in ps_entries}
-    if states <= {"running"}:
-        return "running"
-    if states & {"exited", "dead"}:
-        return "error"
-    return "provisioning"
-
-
-def save_instance(
-    db: Database,
-    workspace_id: str,
-    *,
-    status: str,
-    container_ids: list[str],
-    grpc_port: int | None = None,
-    last_error: str | None = None,
-    platform: dict | None = None,
-) -> dict:
-    doc = {
-        "workspaceId": workspace_id,
-        "composeProjectName": project_name_for(workspace_id),
-        "containerIds": container_ids,
-        "status": status,
-        "lastError": last_error,
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
-    }
-    if grpc_port is not None:
-        doc["ports"] = {"grpc": grpc_port}
-    if platform is not None:
-        doc["platform"] = platform
-
-    db.buildfarm_instances.find_one_and_update(
-        {"workspaceId": workspace_id},
-        {"$set": doc},
-        upsert=True,
-    )
-    return db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0})
-
-
 @app.get("/health")
 def health():
     return {"status": "ok", "besPort": settings.bes_port}
 
 
+@app.post("/credentials/validate", dependencies=[Depends(require_internal_token)])
+def validate_credential(request: ValidateCredentialRequest):
+    """Confirms an AWS role is actually assumable with the given bootstrap key before the backend
+    encrypts and stores anything -- called from CloudCredentialsService.connect(), never exposed
+    to the frontend directly (this route itself is internal-token gated, same as every other route
+    here)."""
+    try:
+        assumed_role_arn = credentials.validate_assume_role(
+            request.roleArn,
+            request.externalId,
+            request.bootstrapAccessKeyId,
+            request.bootstrapSecretAccessKey,
+            request.region,
+        )
+    except CredentialValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"assumedRoleArn": assumed_role_arn}
+
+
 @app.post("/provision", dependencies=[Depends(require_internal_token)])
 def provision(request: ProvisionRequest, db: Database = Depends(get_db)):
-    try:
-        topology = parse_topology(request.nodes)
-    except InvalidTopologyError as e:
-        raise HTTPException(status_code=400, detail={"issues": e.issues})
-
-    workspace_id = request.workspaceId
-    project_name = project_name_for(workspace_id)
-    grpc_port = allocate_port(db, workspace_id, docker_manager.published_host_ports())
-
-    save_instance(db, workspace_id, status="provisioning", container_ids=[], grpc_port=grpc_port)
-
-    config_yml = render.render_config_yml(topology)
-    compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port, config_yml)
-    path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
-
-    try:
-        for attempt in range(5):
-            try:
-                docker_manager.compose_up(path, project_name)
-                break
-            except ComposeError as e:
-                taken = "port is already allocated" in e.stderr or "address already in use" in e.stderr
-                if not taken or attempt == 4:
-                    raise
-                try:
-                    docker_manager.compose_down(path, project_name)
-                except ComposeError:
-                    pass
-                grpc_port = reallocate_port(db, workspace_id, docker_manager.published_host_ports())
-                compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port, config_yml)
-                path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
-    except ComposeError as e:
-        detail = f"{e}\n{e.stderr}".strip()
-        instance = save_instance(
-            db, workspace_id, status="error", container_ids=[], grpc_port=grpc_port, last_error=detail
-        )
-        raise HTTPException(status_code=502, detail={"message": detail, "instance": instance})
-
-    ps_entries = docker_manager.compose_ps(path, project_name)
-    container_ids = [e.get("ID", "") for e in ps_entries if e.get("ID")]
-    status = summarize_status(ps_entries)
-
-    return save_instance(
-        db,
-        workspace_id,
-        status=status,
-        container_ids=container_ids,
-        grpc_port=grpc_port,
-        platform=docker_manager.worker_platform(),
-    )
+    backend = get_backend(request.provider)
+    return backend.provision(request, db)
 
 
 @app.post("/teardown", dependencies=[Depends(require_internal_token)])
 def teardown(request: TeardownRequest, db: Database = Depends(get_db)):
     workspace_id = request.workspaceId
-    project_name = project_name_for(workspace_id)
-    path = docker_manager.project_dir(workspace_id)
-
-    if (path / "docker-compose.yml").exists():
-        try:
-            docker_manager.compose_down(path, project_name)
-        except ComposeError as e:
-            detail = f"{e}\n{e.stderr}".strip()
-            raise HTTPException(status_code=502, detail={"message": detail})
-
     existing = db.buildfarm_instances.find_one({"workspaceId": workspace_id})
-    grpc_port = existing["ports"]["grpc"] if existing and existing.get("ports") else None
-    return save_instance(
-        db, workspace_id, status="stopped", container_ids=[], grpc_port=grpc_port
-    )
+    # No instance ever provisioned for this workspace -- nothing to tear down. Default to the
+    # docker backend (its own teardown is already a no-op when nothing's on disk) rather than
+    # erroring, matching the existing tolerant-of-already-gone behavior.
+    provider = existing.get("provider", "docker") if existing else "docker"
+    backend = get_backend(provider)
+    return backend.teardown(workspace_id, db, aws_credential=request.awsCredential)
 
 
 @app.get("/infra/{workspace_id}", dependencies=[Depends(require_internal_token)])
 def infra(workspace_id: str, db: Database = Depends(get_db)):
     existing = db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0})
-    if not existing or not existing.get("containerIds"):
+    if not existing:
         return {"containers": []}
-    return {"containers": docker_manager.container_stats(existing["containerIds"])}
+    backend = get_backend(existing.get("provider", "docker"))
+    return backend.infra(workspace_id, existing)
 
 
 @app.get("/infra/{workspace_id}/trends", dependencies=[Depends(require_internal_token)])
@@ -238,23 +155,8 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
     if not existing:
         raise HTTPException(status_code=404, detail="No buildfarm instance for this workspace")
 
-    project_name = project_name_for(workspace_id)
-    path = docker_manager.project_dir(workspace_id)
-    if (path / "docker-compose.yml").exists() and existing.get("status") != "stopped":
-        ps_entries = docker_manager.compose_ps(path, project_name)
-        container_ids = [e.get("ID", "") for e in ps_entries if e.get("ID")]
-        live_status = summarize_status(ps_entries)
-        grpc_port = existing["ports"]["grpc"] if existing.get("ports") else None
-        return save_instance(
-            db,
-            workspace_id,
-            status=live_status,
-            container_ids=container_ids,
-            grpc_port=grpc_port,
-            platform=docker_manager.worker_platform(),
-        )
-
-    return existing
+    backend = get_backend(existing.get("provider", "docker"))
+    return backend.status(workspace_id, db, existing)
 
 
 _DEPLOYED_FILE_NAMES = ("config.yml", "docker-compose.yml")

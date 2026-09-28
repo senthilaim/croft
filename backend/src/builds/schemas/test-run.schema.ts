@@ -24,6 +24,7 @@ export class TestRun {
   label!: string;
 
   @Prop({
+    type: String,
     required: true,
     enum: ['passed', 'flaky', 'timeout', 'failed', 'incomplete', 'no_status'],
   })

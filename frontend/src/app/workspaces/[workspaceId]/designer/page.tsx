@@ -13,10 +13,11 @@ export default async function DesignerPage({
   const { workspaceId } = await params;
   const user = await getCurrentUser();
   if (!user) redirect("/signin");
-  const [workspaceRes, configRes, instanceRes] = await Promise.all([
+  const [workspaceRes, configRes, instanceRes, cloudCredentialRes] = await Promise.all([
     backendFetch(`/workspaces/${workspaceId}`),
     backendFetch(`/workspaces/${workspaceId}/buildfarm-config`),
     backendFetch(`/workspaces/${workspaceId}/buildfarm/status`),
+    backendFetch(`/workspaces/${workspaceId}/cloud-credentials/connection`),
   ]);
 
   if (configRes.status === 404 || configRes.status === 403) notFound();
@@ -34,6 +35,7 @@ export default async function DesignerPage({
         initialConfig={config}
         initialInstance={instance}
         canWrite={workspace ? workspace.myRole !== "viewer" : false}
+        hasCloudCredential={cloudCredentialRes.ok}
       />
     </div>
   );

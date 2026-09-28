@@ -4,9 +4,23 @@ import type {
   BuildfarmEdge,
   BuildfarmInstance,
   BuildfarmNode,
+  BuildfarmProvider,
   InfraStats,
   InfraTrendSeries,
 } from '@croft/shared-types';
+
+/** Forwarded to automation's /provision and /teardown -- automation never touches the
+ * cloud_credentials collection directly, so NestJS decrypts the bootstrap secret (via
+ * CloudCredentialsService) and sends it fresh on every call instead. Field names match
+ * automation/app/models.py's AwsCredential exactly. */
+export interface AwsCredentialPayload {
+  roleArn: string;
+  externalId: string;
+  bootstrapAccessKeyId: string;
+  bootstrapSecretAccessKey: string;
+  region: string;
+  allowedIngressCidrs: string[];
+}
 
 @Injectable()
 export class ProvisioningService {
@@ -25,19 +39,23 @@ export class ProvisioningService {
 
   async submit(
     workspaceId: string,
+    provider: BuildfarmProvider,
     nodes: BuildfarmNode[],
     edges: BuildfarmEdge[],
+    awsCredential?: AwsCredentialPayload,
   ): Promise<BuildfarmInstance> {
     const res = await this.callAutomation('/provision', {
       workspaceId,
+      provider,
       nodes,
       edges,
+      awsCredential,
     });
     return res as BuildfarmInstance;
   }
 
-  async teardown(workspaceId: string): Promise<BuildfarmInstance> {
-    const res = await this.callAutomation('/teardown', { workspaceId });
+  async teardown(workspaceId: string, awsCredential?: AwsCredentialPayload): Promise<BuildfarmInstance> {
+    const res = await this.callAutomation('/teardown', { workspaceId, awsCredential });
     return res as BuildfarmInstance;
   }
 

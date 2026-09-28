@@ -24,10 +24,13 @@ import type {
   BuildfarmInstance,
   BuildfarmNode,
   BuildfarmNodeType,
+  BuildfarmProvider,
+  CostEstimate,
 } from "@croft/shared-types";
 import { nodeTypes, type BuildfarmNodeData } from "./buildfarm-node";
 import { Palette, DRAG_DATA_TYPE } from "./palette";
 import { ConfigPanel } from "./config-panel";
+import { CostConfirmModal } from "./cost-confirm-modal";
 import { defaultConfigFor } from "./node-defaults";
 import { validateTopology } from "./validate-topology";
 
@@ -105,15 +108,20 @@ interface BuildfarmCanvasProps {
   /** Server-enforced on the actual save/submit/teardown endpoints (a viewer gets a 403 regardless)
    * -- this just avoids a confusing "click it, get an error" experience for that role. */
   canWrite: boolean;
+  /** Whether this workspace has a connected AWS CloudCredential -- gates the provider selector's
+   * AWS option, since AwsBackend.provision() rejects a request with none anyway (see
+   * ProvisioningController.submit()). */
+  hasCloudCredential: boolean;
 }
 
-function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: BuildfarmCanvasProps) {
+function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, hasCloudCredential }: BuildfarmCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<BuildfarmNodeData>>(
     initialConfig.nodes.map(toFlowNode),
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
     initialConfig.edges.map(toFlowEdge),
   );
+  const [provider, setProvider] = useState<BuildfarmProvider>(initialConfig.provider);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -121,6 +129,11 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [tearingDown, setTearingDown] = useState(false);
+  const [costConfirm, setCostConfirm] = useState<{
+    estimate: CostEstimate | null;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
   const { screenToFlowPosition } = useReactFlow();
 
   const onConnect: OnConnect = useCallback(
@@ -191,15 +204,19 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
     [buildfarmNodes, buildfarmEdges],
   );
 
+  function saveConfigRequest() {
+    return fetch(`/api/workspaces/${workspaceId}/buildfarm-config`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, nodes: buildfarmNodes, edges: buildfarmEdges }),
+    });
+  }
+
   async function handleSave() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      const res = await fetch(`/api/workspaces/${workspaceId}/buildfarm-config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: buildfarmNodes, edges: buildfarmEdges }),
-      });
+      const res = await saveConfigRequest();
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setSaveMessage(data.message ?? "Failed to save");
@@ -213,20 +230,10 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
     }
   }
 
-  async function handleSubmitSetup() {
+  async function submitSetup() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const saveRes = await fetch(`/api/workspaces/${workspaceId}/buildfarm-config`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: buildfarmNodes, edges: buildfarmEdges }),
-      });
-      if (!saveRes.ok) {
-        setSubmitError("Could not save configuration before submitting");
-        return;
-      }
-
       const res = await fetch(`/api/workspaces/${workspaceId}/buildfarm/submit`, {
         method: "POST",
       });
@@ -242,6 +249,41 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSubmitSetup() {
+    setSubmitError(null);
+    const saveRes = await saveConfigRequest().catch(() => null);
+    if (!saveRes?.ok) {
+      setSubmitError("Could not save configuration before submitting");
+      return;
+    }
+
+    if (provider !== "aws") {
+      await submitSetup();
+      return;
+    }
+
+    // Real infrastructure with a real bill -- mandatory, freshly-recomputed confirmation before
+    // /provision ever runs, not skippable or defaulted through. See CostConfirmModal.
+    setCostConfirm({ estimate: null, loading: true, error: null });
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/cost`);
+      const data = await res.json().catch(() => null);
+      const estimate = data?.estimates?.find((e: CostEstimate) => e.provider === "aws") ?? null;
+      if (!res.ok || !estimate) {
+        setCostConfirm({ estimate: null, loading: false, error: "Could not calculate a cost estimate" });
+        return;
+      }
+      setCostConfirm({ estimate, loading: false, error: null });
+    } catch {
+      setCostConfirm({ estimate: null, loading: false, error: "Could not reach the server" });
+    }
+  }
+
+  async function handleConfirmCostAndProvision() {
+    setCostConfirm(null);
+    await submitSetup();
   }
 
   async function handleTeardown() {
@@ -276,6 +318,33 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
           <Background />
           <Controls />
           <Panel position="top-right" className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2 rounded-full border border-black/10 bg-white/90 p-1 shadow dark:border-white/10 dark:bg-zinc-900/90">
+              {(["docker", "aws"] as const).map((p) => {
+                const disabled =
+                  !canWrite || instance?.status === "running" || (p === "aws" && !hasCloudCredential);
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setProvider(p)}
+                    disabled={disabled}
+                    title={
+                      p === "aws" && !hasCloudCredential
+                        ? "Connect an AWS account under Settings > Cloud first"
+                        : instance?.status === "running"
+                          ? "Tear down the running Buildfarm before changing provider"
+                          : undefined
+                    }
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+                      provider === p
+                        ? "bg-brand text-white"
+                        : "text-zinc-600 hover:bg-black/[.04] dark:text-zinc-300 dark:hover:bg-white/[.06]"
+                    }`}
+                  >
+                    {p === "docker" ? "Docker" : "AWS"}
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
@@ -402,8 +471,19 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite }: 
           nodeId={selectedNode.id}
           nodeType={selectedNode.data.nodeType}
           config={selectedNode.data.config}
+          provider={provider}
           onChange={updateSelectedConfig}
           onDelete={deleteSelectedNode}
+        />
+      )}
+      {costConfirm && (
+        <CostConfirmModal
+          estimate={costConfirm.estimate}
+          loading={costConfirm.loading}
+          error={costConfirm.error}
+          submitting={submitting}
+          onConfirm={handleConfirmCostAndProvision}
+          onCancel={() => setCostConfirm(null)}
         />
       )}
     </div>
