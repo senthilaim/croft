@@ -10,44 +10,40 @@
  */
 
 const ROLE_POLICY_ACTIONS = [
+  // Read-only, granted as a wildcard rather than enumerated one-by-one: the Terraform AWS
+  // provider issues auxiliary Describe* calls beyond the obvious ones for a given resource (e.g.
+  // aws_vpc's enable_dns_hostnames/enable_dns_support are verified via a DescribeVpcAttribute
+  // read-back after ModifyVpcAttribute -- a real gap hit in practice, not a hypothetical one).
+  // Describe* actions are non-mutating and free, so this costs nothing security-wise while
+  // avoiding a whack-a-mole of one-more-missing-permission failures on every retry.
+  'ec2:Describe*',
   'ec2:RunInstances',
   'ec2:TerminateInstances',
   'ec2:StartInstances',
   'ec2:StopInstances',
-  'ec2:DescribeInstances',
-  'ec2:DescribeInstanceStatus',
   'ec2:CreateTags',
   'ec2:DeleteTags',
-  'ec2:DescribeTags',
   'ec2:CreateSecurityGroup',
   'ec2:DeleteSecurityGroup',
   'ec2:AuthorizeSecurityGroupIngress',
   'ec2:RevokeSecurityGroupIngress',
   'ec2:AuthorizeSecurityGroupEgress',
   'ec2:RevokeSecurityGroupEgress',
-  'ec2:DescribeSecurityGroups',
   'ec2:CreateVpc',
   'ec2:DeleteVpc',
-  'ec2:DescribeVpcs',
   'ec2:ModifyVpcAttribute',
   'ec2:CreateSubnet',
   'ec2:DeleteSubnet',
-  'ec2:DescribeSubnets',
   'ec2:CreateInternetGateway',
   'ec2:DeleteInternetGateway',
   'ec2:AttachInternetGateway',
   'ec2:DetachInternetGateway',
-  'ec2:DescribeInternetGateways',
   'ec2:CreateRouteTable',
   'ec2:DeleteRouteTable',
   'ec2:CreateRoute',
   'ec2:DeleteRoute',
   'ec2:AssociateRouteTable',
   'ec2:DisassociateRouteTable',
-  'ec2:DescribeRouteTables',
-  'ec2:DescribeImages',
-  'ec2:DescribeAvailabilityZones',
-  'ec2:DescribeRegions',
 ] as const;
 
 export function buildTrustPolicyJson(externalId: string): string {
