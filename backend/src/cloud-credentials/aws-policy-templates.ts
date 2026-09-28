@@ -34,6 +34,10 @@ const ROLE_POLICY_ACTIONS = [
   'ec2:ModifyVpcAttribute',
   'ec2:CreateSubnet',
   'ec2:DeleteSubnet',
+  // The subnet's map_public_ip_on_launch is applied as a post-create attribute modification, the
+  // same pattern as the VPC's DNS settings above -- a real gap hit in practice (ModifyVpcAttribute
+  // alone wasn't enough).
+  'ec2:ModifySubnetAttribute',
   'ec2:CreateInternetGateway',
   'ec2:DeleteInternetGateway',
   'ec2:AttachInternetGateway',
