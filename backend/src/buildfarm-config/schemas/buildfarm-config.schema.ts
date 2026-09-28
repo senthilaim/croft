@@ -19,7 +19,7 @@ export class BuildfarmNode {
   @Prop({ required: true })
   id!: string;
 
-  @Prop({ required: true, enum: ['server', 'worker', 'redis', 'cache'] })
+  @Prop({ type: String, required: true, enum: ['server', 'worker', 'redis', 'cache'] })
   type!: BuildfarmNodeType;
 
   @Prop({ type: BuildfarmNodePositionSchema, required: true })
@@ -62,6 +62,7 @@ export class BuildfarmConfig {
   edges!: BuildfarmEdge[];
 
   @Prop({
+    type: String,
     required: true,
     enum: ['draft', 'provisioning', 'running', 'error', 'stopped'],
     default: 'draft',

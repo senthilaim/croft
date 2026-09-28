@@ -214,6 +214,18 @@ export class BuildsService {
     return this.buildModel.countDocuments({ workspaceId, demo: { $ne: true }, startTime: { $gte: sinceIso } }).exec();
   }
 
+  /** Most recent build's startTime for a workspace, or null if it has never had one -- used by
+   * IdleTimeoutService to measure how long an AWS Buildfarm has sat unused. Reuses the same
+   * {workspaceId, startTime} index findAllForWorkspace's sort already relies on. */
+  async findLatestStartTime(workspaceId: string): Promise<string | null> {
+    const build = await this.buildModel
+      .findOne({ workspaceId, demo: { $ne: true } })
+      .sort({ startTime: -1 })
+      .select({ startTime: 1 })
+      .exec();
+    return build?.startTime ?? null;
+  }
+
   findOne(workspaceId: string, buildId: string): Promise<BuildDocument | null> {
     return this.buildModel.findOne({ _id: buildId, workspaceId }).exec();
   }

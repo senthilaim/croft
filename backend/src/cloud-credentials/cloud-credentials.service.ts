@@ -128,6 +128,12 @@ export class CloudCredentialsService {
     await this.model.deleteOne({ workspaceId, provider: 'aws', environment: 'staging' }).exec();
   }
 
+  /** Every AWS staging credential across all workspaces -- used only by IdleTimeoutService to find
+   * which workspaces to check each tick; no other caller needs a cross-workspace listing. */
+  listAllStagingCredentials(): Promise<CloudCredentialDocument[]> {
+    return this.model.find({ provider: 'aws', environment: 'staging' }).exec();
+  }
+
   /** For internal use only (AwsBackend provisioning calls) -- never exposed through a controller
    * response. */
   async getDecryptedSecret(
