@@ -6,6 +6,7 @@ import type {
   BuildfarmConfigStatus,
   BuildfarmProvider,
 } from '@croft/shared-types';
+import { assertAwsInstanceTypesAllowed } from './aws-instance-types.js';
 import {
   BuildfarmConfig,
   BuildfarmConfigDocument,
@@ -38,6 +39,8 @@ export class BuildfarmConfigService {
     nodes: BuildfarmNode[],
     edges: BuildfarmEdge[],
   ): Promise<BuildfarmConfigDocument> {
+    assertAwsInstanceTypesAllowed(provider, nodes);
+
     const updated = await this.buildfarmConfigModel
       .findOneAndUpdate(
         { workspaceId },

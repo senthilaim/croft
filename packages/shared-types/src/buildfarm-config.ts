@@ -1,5 +1,12 @@
 export type BuildfarmNodeType = "server" | "worker" | "redis" | "cache";
 
+/** Staging-only allowlist for a node's config.instanceType when the design's provider is "aws" --
+ * the smallest 1-2 entries per family from backend/src/cost/cost-estimator.ts's AWS catalog,
+ * matching this release's staging posture. Shared so the designer UI's dropdown and the backend's
+ * server-side enforcement (buildfarm-config/aws-instance-types.ts) can never drift apart. */
+export const AWS_STAGING_INSTANCE_TYPES = ["m6i.large", "c6i.large"] as const;
+export type AwsStagingInstanceType = (typeof AWS_STAGING_INSTANCE_TYPES)[number];
+
 /** Provider is a whole-design choice, not per-node -- a Buildfarm's nodes must reach each other
  * directly (the backplane, CAS traffic), so mixing e.g. a Docker-local Server with an AWS Worker
  * isn't a coherent network without cross-provider VPN/peering, which is out of scope. */

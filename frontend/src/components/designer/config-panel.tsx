@@ -3,17 +3,20 @@
 import type {
   BuildfarmNodeConfig,
   BuildfarmNodeType,
+  BuildfarmProvider,
   CacheNodeConfig,
   RedisNodeConfig,
   ServerNodeConfig,
   WorkerNodeConfig,
 } from "@croft/shared-types";
+import { AWS_STAGING_INSTANCE_TYPES } from "@croft/shared-types";
 import { NODE_LABELS } from "./node-defaults";
 
 interface ConfigPanelProps {
   nodeId: string;
   nodeType: BuildfarmNodeType;
   config: BuildfarmNodeConfig;
+  provider: BuildfarmProvider;
   onChange: (config: BuildfarmNodeConfig) => void;
   onDelete: () => void;
 }
@@ -36,7 +39,7 @@ function Field({
 const inputClass =
   "rounded-md border border-black/10 bg-white px-3 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900";
 
-export function ConfigPanel({ nodeId, nodeType, config, onChange, onDelete }: ConfigPanelProps) {
+export function ConfigPanel({ nodeId, nodeType, config, provider, onChange, onDelete }: ConfigPanelProps) {
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-4 border-l border-black/10 p-4 dark:border-white/10">
       <div className="flex items-center justify-between">
@@ -64,8 +67,48 @@ export function ConfigPanel({ nodeId, nodeType, config, onChange, onDelete }: Co
         <CacheFields config={config as CacheNodeConfig} onChange={onChange} />
       )}
 
+      {provider === "aws" && nodeType === "worker" && (
+        <InstanceTypeField
+          config={config as WorkerNodeConfig}
+          onChange={onChange as (c: WorkerNodeConfig) => void}
+        />
+      )}
+
       <p className="mt-auto text-xs text-zinc-400 dark:text-zinc-500">Node ID: {nodeId}</p>
     </aside>
+  );
+}
+
+/** AWS only, and only on the Worker node -- the design this release provisions is one EC2
+ * instance running the whole compose stack, sized off the Worker's instanceType (the
+ * resource-heavy role). Server/Redis also carry an instanceType field in shared-types for future
+ * per-role-instance support, but AwsBackend doesn't read it yet, so it isn't surfaced here --
+ * showing a field that currently does nothing would be misleading. */
+function InstanceTypeField({
+  config,
+  onChange,
+}: {
+  config: WorkerNodeConfig;
+  onChange: (c: WorkerNodeConfig) => void;
+}) {
+  return (
+    <Field label="AWS instance type">
+      <select
+        className={inputClass}
+        value={config.instanceType ?? AWS_STAGING_INSTANCE_TYPES[0]}
+        onChange={(e) => onChange({ ...config, instanceType: e.target.value })}
+      >
+        {AWS_STAGING_INSTANCE_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+        Sizes the one EC2 instance this design provisions (runs Server, Worker, and Redis together).
+        Staging only -- the smallest instance types are offered this release.
+      </span>
+    </Field>
   );
 }
 
