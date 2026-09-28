@@ -55,6 +55,16 @@ cd ..
 The default `.env` values all point at each other correctly for local use (ports 3000 / 4000 /
 9000 / 9095 / 27018) — no editing required to get started.
 
+> **Optional: single sign-on (OIDC).** Croft works with just email/password out of the box. To let
+> people sign in through your own identity provider (Okta, Auth0, Keycloak, Google, Authentik, or
+> any other standards-compliant OIDC issuer) as well, fill in `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
+> and `OIDC_CLIENT_SECRET` in `backend/.env` (and root `.env` for the Docker install). Register
+> Croft as a confidential client with your provider using redirect URI
+> `http://localhost:3000/api/auth/oidc/callback` (swap the origin for your real `FRONTEND_ORIGIN`
+> in production). `OIDC_DISPLAY_NAME` controls the sign-in button's label ("Continue with
+> {name}") and defaults to "SSO". Leave all four blank to keep SSO disabled — the button simply
+> doesn't appear on `/signin`/`/signup`, and password auth is unaffected either way.
+
 > Re-run `automation/generate_protos.sh` any time you edit the `.proto` files under
 > `automation/protos/` — `automation/app/generated/` is build output, not checked into git.
 
@@ -298,3 +308,4 @@ curl -X POST http://localhost:9000/teardown \
 | Build never shows up on the dashboard | Confirm the sample project's `.bazelrc` has `--bes_backend=grpc://localhost:9095` and `--bes_header=x-workspace-id=<this workspace's id>` (re-download the sample project if it's stale — ports/ids are baked in at download time). Confirm the automation service is running and port 9095 is listening (see step 3). |
 | `Address already in use` on port 9095 when starting automation | Another automation instance (or a stale process) is already bound to the BES port. `lsof -ti:9095 -sTCP:LISTEN \| xargs -r kill`, then restart `npm run dev:automation`. |
 | Builds land against the wrong (or a torn-down) workspace | The `.bazelrc` you're building with has a stale port/`x-workspace-id` baked in from an earlier download — e.g. your browser saved a repeat download as `buildfarm-sample-project-1.zip`/`-2.zip` and you unzipped the old one. Re-download from the workspace's **Get sample project** page and use that extracted copy. |
+| Signing in with SSO redirects back to `/signin?error=...` | `oidc_state_mismatch` — the login took longer than 10 minutes, or cookies were blocked/cleared mid-flow; just try again. `oidc_failed` — check the backend logs for the real error (a wrong client secret, a `redirect_uri` that doesn't exactly match what's registered at the IdP, or the IdP rejected the request); confirm `OIDC_ISSUER_URL`'s `/.well-known/openid-configuration` actually resolves from the backend. |
