@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { CloudCredential, CloudCredentialSetupInfo, ConnectCloudCredentialRequest } from "@croft/shared-types";
+import {
+  isDocumentationRangeCidr,
+  type CloudCredential,
+  type CloudCredentialSetupInfo,
+  type ConnectCloudCredentialRequest,
+} from "@croft/shared-types";
 
 const card = "rounded-xl border border-black/10 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900";
 const field =
@@ -34,6 +39,29 @@ function CopyBlock({ title, json }: { title: string; json: string }) {
         {json}
       </pre>
     </div>
+  );
+}
+
+/** Numbered step card -- same visual pattern used elsewhere in the app for multi-step setup flows
+ * (e.g. the repo-analysis connect steps), reproduced locally rather than cross-imported since it's
+ * a tiny, fully generic presentational helper. */
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <section className={`${card} p-5`}>
+      <h2 className="mb-3 flex items-center gap-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs text-white">
+          {n}
+        </span>
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function ConsolePath({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="rounded bg-black/[.05] px-1.5 py-0.5 text-[13px] dark:bg-white/10">{children}</code>
   );
 }
 
@@ -144,6 +172,15 @@ export function CloudCredentialsSettings({
             {disconnecting ? "Disconnecting…" : "Disconnect"}
           </button>
         </div>
+        {connection.allowedIngressCidrs.some((c) => isDocumentationRangeCidr(c)) && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+            One of the allowed ingress CIDRs above ({connection.allowedIngressCidrs.find((c) => isDocumentationRangeCidr(c))}) is a
+            reserved example/documentation address, not a real one -- it was likely the connect form&apos;s
+            placeholder typed in by mistake. The Buildfarm&apos;s security group will silently block every real
+            connection until this is fixed. Disconnect and reconnect with your actual public IP, then click{" "}
+            <strong>Submit Setup</strong> again so the security group picks up the change.
+          </p>
+        )}
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
     );
@@ -151,25 +188,77 @@ export function CloudCredentialsSettings({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className={`${card} p-5`}>
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">1. Create the IAM role</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          In your AWS account, create a bootstrap IAM user and a role it can assume (e.g.{" "}
-          <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">CroftBuildfarmProvisioner</code>
-          ), using the trust and permission policies below. Substitute your bootstrap user&apos;s ARN into the
-          trust policy&apos;s Principal -- the External ID is already filled in and is stable for this workspace.
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        Connecting AWS takes five steps in the AWS Console, then one here. None of this creates anything in AWS
+        by itself -- you&apos;re setting up a narrow, revocable way for Croft to provision on your behalf, using
+        only the permissions below.
+      </p>
+
+      <Step n={1} title="Create a bootstrap IAM user">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          In the AWS Console: <ConsolePath>IAM → Users → Create user</ConsolePath>. Any name works, e.g.{" "}
+          <ConsolePath>croft-bootstrap</ConsolePath>. It does not need AWS Management Console access -- this user
+          only ever calls <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">sts:AssumeRole</code>,
+          so skip attaching any permissions to it directly (the real permissions live on the role in step 2).
         </p>
-        <div className="mt-4 flex flex-col gap-4">
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          After creating it, open the user → <ConsolePath>Security credentials</ConsolePath> tab →{" "}
+          <ConsolePath>Create access key</ConsolePath> → choose &quot;Third-party service&quot; (or
+          &quot;Application running outside AWS&quot;). Copy both values now -- the secret key is only ever
+          shown once. You&apos;ll paste them into step 5 below.
+        </p>
+      </Step>
+
+      <Step n={2} title="Create a role, trusting that user">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <ConsolePath>IAM → Roles → Create role → Custom trust policy</ConsolePath>. Paste the JSON below, but
+          first replace the placeholder Principal with the bootstrap user&apos;s real ARN from step 1 (found on
+          that user&apos;s Summary page, shaped like{" "}
+          <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">
+            arn:aws:iam::123456789012:user/croft-bootstrap
+          </code>
+          ). Leave the External ID condition exactly as-is -- it&apos;s already filled in and unique to this
+          workspace.
+        </p>
+        <div className="mt-3">
           <CopyBlock title="Trust policy" json={setupInfo.trustPolicyJson} />
+        </div>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+          On the next screen, skip attaching any AWS-managed permission policies -- step 3 attaches a scoped one
+          instead. Name the role something recognizable, e.g. <ConsolePath>CroftBuildfarmProvisioner</ConsolePath>,
+          and finish creating it.
+        </p>
+      </Step>
+
+      <Step n={3} title="Attach the permission policy">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Open the role you just created → <ConsolePath>Permissions</ConsolePath> tab →{" "}
+          <ConsolePath>Add permissions → Create inline policy</ConsolePath> → <ConsolePath>JSON</ConsolePath> tab.
+          Paste the policy below, then name and create it (e.g. <ConsolePath>CroftBuildfarmPermissions</ConsolePath>
+          ). This is the entire set of permissions Croft ever has in your account -- EC2/VPC/security-group
+          lifecycle only, nothing else.
+        </p>
+        <div className="mt-3">
           <CopyBlock title="Role permission policy" json={setupInfo.rolePolicyJson} />
         </div>
-      </div>
+      </Step>
 
-      <div className={`${card} p-5`}>
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">2. Connect it</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Only the staging environment and the {SUPPORTED_REGION} region are supported this release. Production
-          support is coming soon.
+      <Step n={4} title="Copy the role's ARN">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Back on the role&apos;s <ConsolePath>Summary</ConsolePath> page, copy the <strong>ARN</strong> field
+          (shaped like <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">
+            arn:aws:iam::123456789012:role/CroftBuildfarmProvisioner
+          </code>
+          ). You&apos;ll paste it into the Role ARN field below.
+        </p>
+      </Step>
+
+      <Step n={5} title="Connect it here">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Croft calls <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">sts:AssumeRole</code>{" "}
+          once with what you enter below to confirm it actually works before anything is saved -- nothing is
+          stored if that check fails. Only the staging environment and the {SUPPORTED_REGION} region are
+          supported this release; production support is coming soon.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -231,7 +320,7 @@ export function CloudCredentialsSettings({
                     className={field}
                     value={cidr}
                     onChange={(e) => setCidrs(cidrs.map((c, j) => (j === i ? e.target.value : c)))}
-                    placeholder="203.0.113.5/32"
+                    placeholder="e.g. 198.51.100.5/32 (format only -- not a real address)"
                   />
                   {cidrs.length > 1 && (
                     <button
@@ -253,8 +342,19 @@ export function CloudCredentialsSettings({
               </button>
             </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Who can reach the Buildfarm&apos;s ports -- your own IP and/or your CI provider&apos;s published IP
-              range. 0.0.0.0/0 is not allowed.
+              Who can reach the Buildfarm&apos;s ports -- the real public IP of the machine that will run Bazel,
+              and/or your CI provider&apos;s published IP range. Not sure what yours is? Check{" "}
+              <a
+                href="https://icanhazip.com"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-brand hover:underline"
+              >
+                icanhazip.com
+              </a>{" "}
+              and paste it as-is -- a bare address is automatically treated as /32. 0.0.0.0/0 and
+              example/documentation addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) are rejected --
+              they can never be a real machine.
             </p>
           </div>
         </div>
@@ -266,7 +366,7 @@ export function CloudCredentialsSettings({
         >
           {submitting ? "Connecting…" : "Connect AWS account"}
         </button>
-      </div>
+      </Step>
     </div>
   );
 }

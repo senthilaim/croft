@@ -87,8 +87,11 @@ resource "aws_route_table_association" "this" {
 }
 
 resource "aws_security_group" "this" {
-  name        = local.name
-  description = "Croft Buildfarm (workspace ${var.workspace_id}) -- gRPC ingress from the workspace's allowed CIDRs only"
+  name = local.name
+  # AWS's CreateSecurityGroup only allows a-zA-Z0-9. _-:/()#,@[]+=&;{}!$* in the description --
+  # no apostrophes, no double hyphens. A real apply failed on exactly this (an apostrophe in
+  # "workspace's"), so this stays plain ASCII/punctuation-light on purpose.
+  description = "Croft Buildfarm workspace ${var.workspace_id}: gRPC ingress from allowed CIDRs only"
   vpc_id      = aws_vpc.this.id
   tags        = merge(local.tags, { Name = local.name })
 
