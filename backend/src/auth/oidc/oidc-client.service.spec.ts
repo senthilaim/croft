@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OidcClientService } from './oidc-client.service.js';
+import { OidcClientService, readIdentityClaims } from './oidc-client.service.js';
 
 function serviceWith(overrides: Record<string, string | undefined>): OidcClientService {
   const configValues: Record<string, string | undefined> = {
@@ -73,5 +73,28 @@ describe('OidcClientService -- unconfigured gate', () => {
     await expect(svc.buildAuthorizationRequest()).rejects.not.toThrow(
       "Single sign-on isn't configured on this Croft instance.",
     );
+  });
+});
+
+describe('readIdentityClaims -- no network, pure claims validation', () => {
+  it('rejects an explicitly-unverified email before any account lookup would happen', () => {
+    expect(() => readIdentityClaims({ email: 'user@example.com', email_verified: false })).toThrow(
+      /email is not verified/,
+    );
+  });
+
+  it('accepts a verified email', () => {
+    expect(readIdentityClaims({ email: 'user@example.com', email_verified: true, name: 'A User' })).toEqual({
+      email: 'user@example.com',
+      name: 'A User',
+    });
+  });
+
+  it('accepts an id_token with no email_verified claim at all -- many providers omit it and always verify email', () => {
+    expect(readIdentityClaims({ email: 'user@example.com' })).toEqual({ email: 'user@example.com', name: undefined });
+  });
+
+  it('returns undefined email/name (not a throw) when the id_token carries neither -- caller falls back to userinfo', () => {
+    expect(readIdentityClaims({})).toEqual({ email: undefined, name: undefined });
   });
 });

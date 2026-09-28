@@ -110,12 +110,8 @@ export class OidcClientService {
 
     const claims = tokens.claims();
     if (!claims) throw new UnauthorizedException('Single sign-on failed -- no identity was returned.');
-    if (claims.email_verified === false) {
-      throw new UnauthorizedException("Single sign-on failed -- your identity provider account's email is not verified.");
-    }
 
-    let email = typeof claims.email === 'string' ? claims.email : undefined;
-    let name = typeof claims.name === 'string' ? claims.name : undefined;
+    let { email, name } = readIdentityClaims(claims);
 
     // Not every provider puts email/name in the id_token even with the email/profile scopes
     // requested -- fall back to the userinfo endpoint rather than assuming this one specific
@@ -131,4 +127,26 @@ export class OidcClientService {
 
     return { email, name: name ?? email.split('@')[0], subject: claims.sub };
   }
+}
+
+/** Pure (no network) so it's directly unit-testable without a real signed id_token: given an
+ * already-verified claims set (signature/nonce/state checks all happened inside
+ * authorizationCodeGrant before this is called), decide whether the email claim is usable at all,
+ * and reject an explicitly-unverified email outright before any account lookup happens. */
+export function readIdentityClaims(claims: {
+  email_verified?: unknown;
+  email?: unknown;
+  name?: unknown;
+  [claim: string]: unknown;
+}): {
+  email: string | undefined;
+  name: string | undefined;
+} {
+  if (claims.email_verified === false) {
+    throw new UnauthorizedException("Single sign-on failed -- your identity provider account's email is not verified.");
+  }
+  return {
+    email: typeof claims.email === 'string' ? claims.email : undefined,
+    name: typeof claims.name === 'string' ? claims.name : undefined,
+  };
 }
