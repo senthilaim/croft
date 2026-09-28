@@ -168,9 +168,14 @@ class AwsBackend:
         # drift if the instance was ever terminated outside Croft (e.g. the AWS console), but
         # otherwise this rarely changes between polls since only Croft's own Terraform touches
         # these resources.
+        #
+        # `existing` is the *unfiltered* buildfarm_instances document (main.py's /status route
+        # reads it that way deliberately, since the check below needs terraformState) -- every
+        # return path here must strip it back out via _public() before handing it back, the same
+        # way save_instance()'s own projection already does for the paths that go through it.
         state_b64 = existing.get("terraformState")
         if not state_b64:
-            return existing
+            return self._public(existing)
 
         tf_dir = terraform_manager.workspace_dir(workspace_id)
         terraform_manager.sync_module_files(tf_dir)
@@ -180,7 +185,7 @@ class AwsBackend:
             terraform_manager.init(tf_dir, env)
             tf_outputs = terraform_manager.outputs(tf_dir, env)
         except TerraformError:
-            return existing  # tolerate a transient read failure rather than flipping to "error"
+            return self._public(existing)  # tolerate a transient read failure, don't flip to "error"
 
         host = tf_outputs.get("host", {}).get("value")
         if not host:
@@ -189,11 +194,15 @@ class AwsBackend:
                 terraform_state=state_b64,
             )
         if host == existing.get("host"):
-            return existing
+            return self._public(existing)
         return save_instance(
             db, workspace_id, provider="aws", status=existing.get("status") or "running", host=host,
             terraform_state=state_b64,
         )
+
+    @staticmethod
+    def _public(existing: dict) -> dict:
+        return {k: v for k, v in existing.items() if k not in ("terraformState", "terraformVars")}
 
     def infra(self, workspace_id: str, existing: dict) -> dict:
         # Live CPU/mem metrics need SSM/CloudWatch polling -- explicitly out of scope this

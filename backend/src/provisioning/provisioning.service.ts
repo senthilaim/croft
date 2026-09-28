@@ -96,6 +96,22 @@ export class ProvisioningService {
     return (await res.json()) as InfraStats;
   }
 
+  /** Live Terraform output for a workspace's in-flight AWS provision/teardown -- polled
+   * concurrently while ProvisioningController's background submit() call is still running.
+   * Tolerant of any failure (empty string), same as infra()/deployedFiles(): this is a
+   * nice-to-have progress view, not something that should itself surface an error. */
+  async provisionLog(workspaceId: string): Promise<string> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/provision/${workspaceId}/log`, { headers: this.headers });
+    } catch {
+      return '';
+    }
+    if (!res.ok) return '';
+    const body = (await res.json().catch(() => ({}))) as { log?: string };
+    return body.log ?? '';
+  }
+
   async infraTrends(workspaceId: string, hours: number): Promise<InfraTrendSeries[]> {
     let res: Response;
     try {

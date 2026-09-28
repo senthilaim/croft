@@ -20,6 +20,7 @@ from .settings import settings
 
 MODULE_DIR = Path(__file__).resolve().parent.parent / "terraform" / "buildfarm-aws"
 _MODULE_FILES = ("main.tf", "variables.tf", "outputs.tf", "versions.tf")
+LOG_FILE_NAME = "apply.log"
 
 
 class TerraformError(Exception):
@@ -90,6 +91,39 @@ def _run(path: Path, args: list[str], env: dict, timeout: int) -> subprocess.Com
     return result
 
 
+def log_path(path: Path) -> Path:
+    return path / LOG_FILE_NAME
+
+
+def read_log_tail(path: Path, tail_lines: int = 300) -> str:
+    """Tails the current apply/destroy's live log file -- readable concurrently while that
+    subprocess is still running (a plain file, no special locking needed for a concurrent read
+    of what's been written so far), which is what lets /provision/{id}/log poll real progress
+    instead of returning nothing until the whole operation finishes."""
+    file = log_path(path)
+    if not file.exists():
+        return ""
+    lines = file.read_text(errors="replace").splitlines()
+    return "\n".join(lines[-tail_lines:])
+
+
+def _run_streaming(path: Path, args: list[str], env: dict, timeout: int) -> None:
+    """Like _run, but for apply/destroy specifically: redirects the child process's combined
+    stdout+stderr directly to this workspace's log file (truncated fresh each call) instead of
+    capturing it into a pipe -- the file is what read_log_tail polls while this call is still in
+    flight. init/show/output stay on _run(): they're fast, one-shot reads with no reason to
+    live-tail."""
+    cmd = ["terraform", *args]
+    with open(log_path(path), "w") as log_file:
+        result = subprocess.run(cmd, cwd=path, stdout=log_file, stderr=subprocess.STDOUT, timeout=timeout, env=env)
+    if result.returncode != 0:
+        raise TerraformError(
+            f"terraform {' '.join(args)} failed with exit code {result.returncode}",
+            stdout="",
+            stderr=read_log_tail(path),
+        )
+
+
 def init(path: Path, env: dict) -> None:
     _run(path, ["init", "-input=false", "-no-color"], env, timeout=180)
 
@@ -100,7 +134,7 @@ def _write_tfvars(path: Path, tfvars: dict) -> None:
 
 def apply(path: Path, tfvars: dict, env: dict) -> None:
     _write_tfvars(path, tfvars)
-    _run(
+    _run_streaming(
         path,
         ["apply", "-auto-approve", "-no-color", "-input=false", "-var-file=terraform.tfvars.json"],
         env,
@@ -110,7 +144,7 @@ def apply(path: Path, tfvars: dict, env: dict) -> None:
 
 def destroy(path: Path, tfvars: dict, env: dict) -> None:
     _write_tfvars(path, tfvars)
-    _run(
+    _run_streaming(
         path,
         ["destroy", "-auto-approve", "-no-color", "-input=false", "-var-file=terraform.tfvars.json"],
         env,

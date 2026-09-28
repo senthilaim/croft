@@ -179,3 +179,48 @@ def test_teardown_reuses_the_stored_vars_from_the_last_successful_apply(db):
     assert destroy.call_args[0][1] == stored_vars
     assert instance["status"] == "stopped"
     assert instance["host"] is None
+
+
+def test_status_never_leaks_terraform_state_or_vars_on_any_return_path(db):
+    """main.py's /status route deliberately passes the *unfiltered* document to status() (see
+    AwsBackend.status()'s docstring) since the drift-check needs terraformState -- every return
+    path here must strip it back out before it flows on to the API response, or a multi-KB state
+    blob (and the exact vars a workspace was applied with) would round-trip all the way to the
+    browser on every status poll."""
+    backend = AwsBackend()
+    stored_vars = {"region": "us-east-1"}
+
+    # Path 1: no state yet.
+    existing_no_state = {"workspaceId": "ws1", "status": "provisioning", "terraformVars": stored_vars}
+    result = backend.status("ws1", db, existing_no_state)
+    assert "terraformState" not in result
+    assert "terraformVars" not in result
+
+    # Path 2: state exists, host unchanged after a live refresh (no save_instance call, so this is
+    # the one most likely to leak the raw dict straight through).
+    existing_with_state = {
+        "workspaceId": "ws1", "status": "running", "host": "1.2.3.4",
+        "terraformState": "c3RhdGU=", "terraformVars": stored_vars,
+    }
+    with (
+        patch("app.backends.aws_backend.terraform_manager.sync_module_files"),
+        patch("app.backends.aws_backend.terraform_manager.restore_state"),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch(
+            "app.backends.aws_backend.terraform_manager.outputs",
+            return_value={"host": {"value": "1.2.3.4"}},
+        ),
+    ):
+        result = backend.status("ws1", db, existing_with_state)
+    assert "terraformState" not in result
+    assert "terraformVars" not in result
+
+    # Path 3: a transient terraform read failure -- tolerated, returns the existing doc as-is.
+    with (
+        patch("app.backends.aws_backend.terraform_manager.sync_module_files"),
+        patch("app.backends.aws_backend.terraform_manager.restore_state"),
+        patch("app.backends.aws_backend.terraform_manager.init", side_effect=TerraformError("boom")),
+    ):
+        result = backend.status("ws1", db, existing_with_state)
+    assert "terraformState" not in result
+    assert "terraformVars" not in result

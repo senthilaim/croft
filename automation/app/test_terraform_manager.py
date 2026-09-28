@@ -1,4 +1,7 @@
 import base64
+import subprocess
+
+import pytest
 
 from . import terraform_manager
 
@@ -57,3 +60,50 @@ def test_workspace_dir_is_per_workspace_and_created_on_demand(tmp_path, monkeypa
     assert path_a.is_dir()
     assert path_a.name == "terraform"
     assert path_a.parent.name == "workspace-ws-a"
+
+
+def test_read_log_tail_returns_empty_string_when_no_log_file_exists_yet(tmp_path):
+    assert terraform_manager.read_log_tail(tmp_path) == ""
+
+
+def test_read_log_tail_only_returns_the_last_n_lines(tmp_path):
+    terraform_manager.log_path(tmp_path).write_text("\n".join(f"line {i}" for i in range(10)))
+    tail = terraform_manager.read_log_tail(tmp_path, tail_lines=3)
+    assert tail == "line 7\nline 8\nline 9"
+
+
+def _fake_terraform_run(output: str, returncode: int):
+    def fake_run(cmd, cwd, stdout, stderr, timeout, env):
+        stdout.write(output)
+        stdout.flush()
+        return subprocess.CompletedProcess(cmd, returncode=returncode)
+
+    return fake_run
+
+
+def test_apply_writes_live_output_to_the_log_file_readable_while_it_runs(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        terraform_manager.subprocess, "run", _fake_terraform_run("Creating vpc...\nvpc: Creation complete\n", 0)
+    )
+    terraform_manager.apply(tmp_path, {"region": "us-east-1"}, {})
+    assert "vpc: Creation complete" in terraform_manager.read_log_tail(tmp_path)
+
+
+def test_apply_raises_with_the_log_tail_as_stderr_on_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        terraform_manager.subprocess,
+        "run",
+        _fake_terraform_run("Error: UnauthorizedOperation\n", 1),
+    )
+    with pytest.raises(terraform_manager.TerraformError) as exc_info:
+        terraform_manager.apply(tmp_path, {"region": "us-east-1"}, {})
+    assert "UnauthorizedOperation" in exc_info.value.stderr
+
+
+def test_apply_truncates_the_log_file_from_a_previous_run_before_writing(tmp_path, monkeypatch):
+    terraform_manager.log_path(tmp_path).write_text("stale output from a previous apply\n")
+    monkeypatch.setattr(terraform_manager.subprocess, "run", _fake_terraform_run("fresh output\n", 0))
+    terraform_manager.apply(tmp_path, {"region": "us-east-1"}, {})
+    tail = terraform_manager.read_log_tail(tmp_path)
+    assert "fresh output" in tail
+    assert "stale output" not in tail

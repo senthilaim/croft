@@ -14,6 +14,7 @@ from . import (
     infra_sampler,
     rebuild_simulation,
     repo_analysis,
+    terraform_manager,
 )
 from .auth import require_internal_token
 from .backends import get_backend
@@ -92,7 +93,9 @@ def teardown(request: TeardownRequest, db: Database = Depends(get_db)):
 
 @app.get("/infra/{workspace_id}", dependencies=[Depends(require_internal_token)])
 def infra(workspace_id: str, db: Database = Depends(get_db)):
-    existing = db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0})
+    existing = db.buildfarm_instances.find_one(
+        {"workspaceId": workspace_id}, {"_id": 0, "terraformState": 0, "terraformVars": 0}
+    )
     if not existing:
         return {"containers": []}
     backend = get_backend(existing.get("provider", "docker"))
@@ -157,6 +160,18 @@ def status(workspace_id: str, db: Database = Depends(get_db)):
 
     backend = get_backend(existing.get("provider", "docker"))
     return backend.status(workspace_id, db, existing)
+
+
+@app.get("/provision/{workspace_id}/log", dependencies=[Depends(require_internal_token)])
+def provision_log(workspace_id: str, db: Database = Depends(get_db)):
+    """Tails the current AWS apply/destroy's live Terraform output -- polled concurrently while a
+    /provision or /teardown call for the same workspace is still in flight (see
+    terraform_manager.read_log_tail's docstring for why that's safe). Empty for Docker workspaces
+    or before any AWS operation has run yet."""
+    existing = db.buildfarm_instances.find_one({"workspaceId": workspace_id}, {"_id": 0, "provider": 1})
+    if not existing or existing.get("provider") != "aws":
+        return {"log": ""}
+    return {"log": terraform_manager.read_log_tail(terraform_manager.workspace_dir(workspace_id))}
 
 
 _DEPLOYED_FILE_NAMES = ("config.yml", "docker-compose.yml")

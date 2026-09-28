@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -31,6 +31,7 @@ import { nodeTypes, type BuildfarmNodeData } from "./buildfarm-node";
 import { Palette, DRAG_DATA_TYPE } from "./palette";
 import { ConfigPanel } from "./config-panel";
 import { CostConfirmModal } from "./cost-confirm-modal";
+import { ProvisionLogPanel } from "./provision-log-panel";
 import { defaultConfigFor } from "./node-defaults";
 import { validateTopology } from "./validate-topology";
 
@@ -134,7 +135,50 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
     loading: boolean;
     error: string | null;
   } | null>(null);
+  const [provisionLog, setProvisionLog] = useState<string | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { screenToFlowPosition } = useReactFlow();
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  // AWS provision/teardown run in the background on the server (terraform apply/destroy can take
+  // minutes) -- this tails GET .../status and GET .../log every few seconds until the instance
+  // leaves "provisioning", so the user sees real progress instead of a static spinner. Docker
+  // never enters this: its own submit/teardown resolve synchronously in a few seconds.
+  const pollProvisioning = useCallback(() => {
+    stopPolling();
+    const tick = async () => {
+      try {
+        const [statusRes, logRes] = await Promise.all([
+          fetch(`/api/workspaces/${workspaceId}/buildfarm/status`),
+          fetch(`/api/workspaces/${workspaceId}/buildfarm/log`),
+        ]);
+        if (statusRes.ok) {
+          const inst = (await statusRes.json()) as BuildfarmInstance;
+          setInstance(inst);
+          if (inst.status !== "provisioning") {
+            stopPolling();
+            if (inst.status === "error" && inst.lastError) setSubmitError(inst.lastError);
+          }
+        }
+        if (logRes.ok) {
+          const body = (await logRes.json()) as { log: string };
+          setProvisionLog(body.log || null);
+        }
+      } catch {
+        /* try again next tick */
+      }
+    };
+    void tick();
+    pollTimerRef.current = setInterval(() => void tick(), 3000);
+  }, [workspaceId, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]);
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
@@ -233,6 +277,7 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
   async function submitSetup() {
     setSubmitting(true);
     setSubmitError(null);
+    setProvisionLog(null);
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/buildfarm/submit`, {
         method: "POST",
@@ -243,7 +288,9 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
         if (data.instance) setInstance(data.instance);
         return;
       }
-      setInstance(data as BuildfarmInstance);
+      const result = data as BuildfarmInstance;
+      setInstance(result);
+      if (result.status === "provisioning") pollProvisioning();
     } catch {
       setSubmitError("Could not reach the server");
     } finally {
@@ -288,11 +335,16 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
 
   async function handleTeardown() {
     setTearingDown(true);
+    setProvisionLog(null);
     try {
       const res = await fetch(`/api/workspaces/${workspaceId}/buildfarm/teardown`, {
         method: "POST",
       });
-      if (res.ok) setInstance((await res.json()) as BuildfarmInstance);
+      if (res.ok) {
+        const result = (await res.json()) as BuildfarmInstance;
+        setInstance(result);
+        if (result.status === "provisioning") pollProvisioning();
+      }
     } finally {
       setTearingDown(false);
     }
@@ -366,11 +418,11 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
               ) : (
                 <button
                   onClick={handleSubmitSetup}
-                  disabled={submitting || issues.length > 0 || !canWrite}
+                  disabled={submitting || instance?.status === "provisioning" || issues.length > 0 || !canWrite}
                   title={canWrite ? undefined : "Viewers can't provision this workspace's Buildfarm"}
                   className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
-                  {submitting ? "Setting up…" : "Submit Setup"}
+                  {submitting || instance?.status === "provisioning" ? "Setting up…" : "Submit Setup"}
                 </button>
               )}
             </div>
@@ -411,7 +463,7 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
                 {instance.status === "running" && (
                   <>
                     <p className="text-zinc-500 dark:text-zinc-400">
-                      grpc://localhost:{instance.ports.grpc}
+                      grpc://{instance.host ?? "localhost"}:{instance.ports.grpc}
                     </p>
                     <Link
                       href={`/workspaces/${workspaceId}/sample-project`}
@@ -463,6 +515,12 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
                 sharing results through the Worker&apos;s remote cache instead.
               </p>
             </div>
+          </div>
+        )}
+
+        {instance?.provider === "aws" && (instance.status === "provisioning" || provisionLog) && (
+          <div className="pointer-events-auto absolute inset-x-4 bottom-4">
+            <ProvisionLogPanel log={provisionLog} inProgress={instance.status === "provisioning"} />
           </div>
         )}
       </div>
