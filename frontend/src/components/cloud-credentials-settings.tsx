@@ -1,0 +1,272 @@
+"use client";
+
+import { useState } from "react";
+import type { CloudCredential, CloudCredentialSetupInfo, ConnectCloudCredentialRequest } from "@croft/shared-types";
+
+const card = "rounded-xl border border-black/10 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900";
+const field =
+  "h-9 w-full rounded-lg border border-black/10 bg-white px-3 text-sm text-zinc-800 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100";
+const label = "mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400";
+
+const IDLE_TIMEOUT_MIN = 30;
+const IDLE_TIMEOUT_MAX = 240;
+const SUPPORTED_REGION = "us-east-1";
+
+function CopyBlock({ title, json }: { title: string; json: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{title}</span>
+        <button
+          type="button"
+          onClick={async () => {
+            await navigator.clipboard.writeText(json);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          className="text-xs font-medium text-brand hover:underline"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="max-h-56 overflow-auto rounded-lg border border-black/10 bg-black/[.03] p-3 font-mono text-[11px] text-zinc-700 dark:border-white/10 dark:bg-white/[.04] dark:text-zinc-300">
+        {json}
+      </pre>
+    </div>
+  );
+}
+
+export function CloudCredentialsSettings({
+  workspaceId,
+  setupInfo,
+  initialConnection,
+}: {
+  workspaceId: string;
+  setupInfo: CloudCredentialSetupInfo;
+  initialConnection: CloudCredential | null;
+}) {
+  const [connection, setConnection] = useState(initialConnection);
+  const [roleArn, setRoleArn] = useState("");
+  const [accessKeyId, setAccessKeyId] = useState("");
+  const [secretAccessKey, setSecretAccessKey] = useState("");
+  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState(60);
+  const [cidrs, setCidrs] = useState<string[]>([""]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function handleConnect() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const body: ConnectCloudCredentialRequest = {
+        roleArn: roleArn.trim(),
+        bootstrapAccessKeyId: accessKeyId.trim(),
+        bootstrapSecretAccessKey: secretAccessKey,
+        environment: "staging",
+        region: SUPPORTED_REGION,
+        idleTimeoutMinutes,
+        allowedIngressCidrs: cidrs.map((c) => c.trim()).filter(Boolean),
+      };
+      const res = await fetch(`/api/workspaces/${workspaceId}/cloud-credentials/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(payload?.message ?? "Could not connect this AWS account.");
+        return;
+      }
+      setConnection(payload as CloudCredential);
+      setSecretAccessKey("");
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/cloud-credentials/connection`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setError("Could not disconnect this AWS account.");
+        return;
+      }
+      setConnection(null);
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  if (connection) {
+    return (
+      <div className={`${card} p-5`}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">AWS connected</h2>
+            <dl className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+              <div>
+                <dt className="inline font-medium text-zinc-700 dark:text-zinc-300">Role ARN: </dt>
+                <dd className="inline">{connection.roleArn}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-zinc-700 dark:text-zinc-300">Bootstrap key: </dt>
+                <dd className="inline">••••{connection.bootstrapKeyLast4}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-zinc-700 dark:text-zinc-300">Region: </dt>
+                <dd className="inline">{connection.region}</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-zinc-700 dark:text-zinc-300">Idle timeout: </dt>
+                <dd className="inline">{connection.idleTimeoutMinutes} minutes</dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-zinc-700 dark:text-zinc-300">Allowed ingress: </dt>
+                <dd className="inline">{connection.allowedIngressCidrs.join(", ")}</dd>
+              </div>
+            </dl>
+          </div>
+          <button
+            onClick={handleDisconnect}
+            disabled={disconnecting}
+            className="h-9 shrink-0 rounded-lg border border-red-200 px-4 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-950/30"
+          >
+            {disconnecting ? "Disconnecting…" : "Disconnect"}
+          </button>
+        </div>
+        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className={`${card} p-5`}>
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">1. Create the IAM role</h2>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          In your AWS account, create a bootstrap IAM user and a role it can assume (e.g.{" "}
+          <code className="rounded bg-black/[.05] px-1 py-0.5 dark:bg-white/10">CroftBuildfarmProvisioner</code>
+          ), using the trust and permission policies below. Substitute your bootstrap user&apos;s ARN into the
+          trust policy&apos;s Principal -- the External ID is already filled in and is stable for this workspace.
+        </p>
+        <div className="mt-4 flex flex-col gap-4">
+          <CopyBlock title="Trust policy" json={setupInfo.trustPolicyJson} />
+          <CopyBlock title="Role permission policy" json={setupInfo.rolePolicyJson} />
+        </div>
+      </div>
+
+      <div className={`${card} p-5`}>
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">2. Connect it</h2>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Only the staging environment and the {SUPPORTED_REGION} region are supported this release. Production
+          support is coming soon.
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={label}>Role ARN</label>
+            <input
+              className={field}
+              value={roleArn}
+              onChange={(e) => setRoleArn(e.target.value)}
+              placeholder="arn:aws:iam::123456789012:role/CroftBuildfarmProvisioner"
+            />
+          </div>
+          <div>
+            <label className={label}>Bootstrap access key ID</label>
+            <input className={field} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+          </div>
+          <div>
+            <label className={label}>Bootstrap secret access key</label>
+            <input
+              className={field}
+              type="password"
+              value={secretAccessKey}
+              onChange={(e) => setSecretAccessKey(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={label}>Environment</label>
+            <select className={field} value="staging" disabled>
+              <option value="staging">Staging</option>
+              <option value="production" disabled>
+                Production (coming soon)
+              </option>
+            </select>
+          </div>
+          <div>
+            <label className={label}>Region</label>
+            <input className={field} value={SUPPORTED_REGION} disabled />
+          </div>
+          <div>
+            <label className={label}>Idle timeout (minutes)</label>
+            <input
+              className={field}
+              type="number"
+              min={IDLE_TIMEOUT_MIN}
+              max={IDLE_TIMEOUT_MAX}
+              value={idleTimeoutMinutes}
+              onChange={(e) => setIdleTimeoutMinutes(Number(e.target.value))}
+            />
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              {IDLE_TIMEOUT_MIN}-{IDLE_TIMEOUT_MAX} minutes. The Buildfarm tears itself down after this long
+              without a build.
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>Allowed ingress CIDRs</label>
+            <div className="flex flex-col gap-2">
+              {cidrs.map((cidr, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    className={field}
+                    value={cidr}
+                    onChange={(e) => setCidrs(cidrs.map((c, j) => (j === i ? e.target.value : c)))}
+                    placeholder="203.0.113.5/32"
+                  />
+                  {cidrs.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setCidrs(cidrs.filter((_, j) => j !== i))}
+                      className="h-9 shrink-0 rounded-lg border border-black/10 px-3 text-sm text-zinc-600 hover:bg-black/[.03] dark:border-white/10 dark:text-zinc-400 dark:hover:bg-white/[.04]"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setCidrs([...cidrs, ""])}
+                className="self-start text-xs font-medium text-brand hover:underline"
+              >
+                + Add another
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+              Who can reach the Buildfarm&apos;s ports -- your own IP and/or your CI provider&apos;s published IP
+              range. 0.0.0.0/0 is not allowed.
+            </p>
+          </div>
+        </div>
+        {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <button
+          onClick={handleConnect}
+          disabled={submitting || !roleArn || !accessKeyId || !secretAccessKey}
+          className="mt-4 h-9 rounded-lg bg-brand px-4 text-sm font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+        >
+          {submitting ? "Connecting…" : "Connect AWS account"}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -6,9 +6,16 @@ import Link from "next/link";
 const TABS = [
   { key: "members", label: "Members", path: "members" },
   { key: "billing", label: "Billing", path: "billing" },
+  { key: "cloud", label: "Cloud", path: "cloud" },
 ] as const;
 
-export function SettingsTabs({ workspaceId, active }: { workspaceId: string; active: "members" | "billing" }) {
+export function SettingsTabs({
+  workspaceId,
+  active,
+}: {
+  workspaceId: string;
+  active: "members" | "billing" | "cloud";
+}) {
   return (
     <div className="flex gap-1 border-b border-black/10 dark:border-white/10">
       {TABS.map((tab) => (
