@@ -2,6 +2,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 import { AuthForm } from "@/components/auth-form";
 import { Logo } from "@/components/layout/logo";
+import { OidcSigninButton, oidcErrorMessage } from "@/components/oidc-signin-button";
+import { getOidcConfig } from "@/lib/session";
 
 const HIGHLIGHTS = [
   "Drag-and-drop Buildfarm designer",
@@ -9,7 +11,15 @@ const HIGHLIGHTS = [
   "Live build analytics: status, cache hits, failures",
 ];
 
-export default function SigninPage() {
+export default async function SigninPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  const oidcConfig = await getOidcConfig();
+  const errorMessage = oidcErrorMessage(error);
+
   return (
     <div className="flex min-h-screen">
       <div className="hidden w-1/2 flex-col justify-between bg-brand-panel p-10 text-white lg:flex">
@@ -50,7 +60,13 @@ export default function SigninPage() {
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Welcome back to Croft.
           </p>
-          <div className="mt-6">
+          {errorMessage && (
+            <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/50 dark:text-red-400">
+              {errorMessage}
+            </p>
+          )}
+          <div className="mt-6 flex flex-col gap-4">
+            {oidcConfig.enabled && <OidcSigninButton displayName={oidcConfig.displayName} />}
             <AuthForm mode="signin" />
           </div>
         </div>
