@@ -103,6 +103,20 @@ describe('CloudCredentialsService.connect -- rejection paths', () => {
     ).rejects.toThrow(/documentation\/example range/);
     expect(model.findOneAndUpdate).not.toHaveBeenCalled();
   });
+
+  it('normalizes a bare IP to /32 before storing it', async () => {
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ assumedRoleArn: 'arn:aws:sts::123:assumed-role/x' }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const model = fakeModel();
+    const service = new CloudCredentialsService(model as never, tokenCipher(), automationConfig());
+
+    await service.connect('ws1', 'user1', { ...VALID_REQUEST, allowedIngressCidrs: ['44.212.220.79'] });
+
+    const [, writeArgs] = model.findOneAndUpdate.mock.calls[0]!;
+    expect(writeArgs.allowedIngressCidrs).toEqual(['44.212.220.79/32']);
+  });
 });
 
 describe('CloudCredentialsService.connect -- validate-before-store', () => {

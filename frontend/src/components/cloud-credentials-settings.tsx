@@ -342,8 +342,8 @@ export function CloudCredentialsSettings({
               </button>
             </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Who can reach the Buildfarm&apos;s ports -- the real public IP (as a /32) of the machine that will
-              run Bazel, and/or your CI provider&apos;s published IP range. Not sure what yours is? Check{" "}
+              Who can reach the Buildfarm&apos;s ports -- the real public IP of the machine that will run Bazel,
+              and/or your CI provider&apos;s published IP range. Not sure what yours is? Check{" "}
               <a
                 href="https://icanhazip.com"
                 target="_blank"
@@ -351,9 +351,10 @@ export function CloudCredentialsSettings({
                 className="text-brand hover:underline"
               >
                 icanhazip.com
-              </a>
-              . 0.0.0.0/0 and example/documentation addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
-              are rejected -- they can never be a real machine.
+              </a>{" "}
+              and paste it as-is -- a bare address is automatically treated as /32. 0.0.0.0/0 and
+              example/documentation addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) are rejected --
+              they can never be a real machine.
             </p>
           </div>
         </div>

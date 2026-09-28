@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   isDocumentationRangeCidr,
+  normalizeIngressCidr,
   type CloudCredential as CloudCredentialDto,
   type CloudCredentialSetupInfo,
   type ConnectCloudCredentialRequest,
@@ -82,10 +83,15 @@ export class CloudCredentialsService {
     if (!request.allowedIngressCidrs || request.allowedIngressCidrs.length === 0) {
       throw new BadRequestException('At least one allowed ingress CIDR is required');
     }
-    if (request.allowedIngressCidrs.includes('0.0.0.0/0')) {
+    // A bare IP (e.g. pasted straight from an IP-lookup site, which is exactly what the connect
+    // form's own "check your IP" link produces) isn't valid CIDR notation -- Terraform's
+    // aws_security_group rejects it outright. Normalized to /32 here, once, so every check below
+    // and everything stored/forwarded to Terraform sees only well-formed CIDRs.
+    const allowedIngressCidrs = request.allowedIngressCidrs.map((cidr) => normalizeIngressCidr(cidr));
+    if (allowedIngressCidrs.includes('0.0.0.0/0')) {
       throw new BadRequestException('0.0.0.0/0 is not allowed -- scope ingress to specific CIDR ranges');
     }
-    if (request.allowedIngressCidrs.some((cidr) => isDocumentationRangeCidr(cidr))) {
+    if (allowedIngressCidrs.some((cidr) => isDocumentationRangeCidr(cidr))) {
       throw new BadRequestException(
         'One of your allowed ingress CIDRs is in a reserved documentation/example range ' +
           '(192.0.2.0/24, 198.51.100.0/24, or 203.0.113.0/24) -- these can never be a real address. ' +
@@ -119,7 +125,7 @@ export class CloudCredentialsService {
         bootstrapKeyLast4: request.bootstrapAccessKeyId.slice(-4),
         region: request.region,
         idleTimeoutMinutes: request.idleTimeoutMinutes,
-        allowedIngressCidrs: request.allowedIngressCidrs,
+        allowedIngressCidrs,
         connectedBy: userId,
       },
       { upsert: true, new: true },
