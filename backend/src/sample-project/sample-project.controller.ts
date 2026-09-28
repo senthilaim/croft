@@ -66,6 +66,7 @@ export class SampleProjectController {
       true;
     return this.sampleProjectService.connectConfig(
       workspace.id,
+      instance.host ?? 'localhost',
       instance.ports.grpc,
       executionEnabled,
       instance.platform ?? null,
@@ -93,6 +94,7 @@ export class SampleProjectController {
     const archive = this.sampleProjectService.createZip(
       workspace.id,
       workspace.name,
+      instance.host ?? 'localhost',
       instance.ports.grpc,
       executionEnabled,
     );

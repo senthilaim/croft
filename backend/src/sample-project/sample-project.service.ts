@@ -167,21 +167,24 @@ exit $((RANDOM % 2))
 
 export function buildBazelrc(
   workspaceId: string,
+  host: string,
   grpcPort: number,
   besPort: number,
   executionEnabled: boolean,
   besToken: string,
 ): string {
   const executorLine = executionEnabled
-    ? `build --remote_executor=grpc://localhost:${grpcPort}\n`
+    ? `build --remote_executor=grpc://${host}:${grpcPort}\n`
     : `# This workspace's Worker has remote execution disabled -- cache-only mode. Actions run\n` +
       `# on this machine, but read/write the shared remote cache below, so a clean checkout\n` +
       `# elsewhere (or after "bazel clean") can skip re-running work someone else already did.\n`;
 
-  return `${executorLine}build --remote_cache=grpc://localhost:${grpcPort}
+  return `${executorLine}build --remote_cache=grpc://${host}:${grpcPort}
 
 # Streams this build's progress live to the workspace's dashboard -- no extra script needed,
-# a plain "bazel build" reports live via Bazel's own Build Event Service mechanism.
+# a plain "bazel build" reports live via Bazel's own Build Event Service mechanism. This is
+# Croft's own automation service, not the Buildfarm above -- it stays at "localhost" (or wherever
+# Croft itself is running) regardless of which cloud the Buildfarm was provisioned into.
 build --bes_backend=grpc://localhost:${besPort}
 build --bes_header=x-workspace-id=${workspaceId}
 build --bes_header=x-workspace-token=${besToken}
@@ -190,7 +193,7 @@ build --bes_upload_mode=nowait_for_upload_complete
 
 # Bazel's .bazelrc sections are command-specific -- "build" flags above don't apply to
 # "bazel test" on their own, so the remote/BES setup is repeated here for the Test grid to work.
-${executionEnabled ? `test --remote_executor=grpc://localhost:${grpcPort}\n` : ''}test --remote_cache=grpc://localhost:${grpcPort}
+${executionEnabled ? `test --remote_executor=grpc://${host}:${grpcPort}\n` : ''}test --remote_cache=grpc://${host}:${grpcPort}
 test --bes_backend=grpc://localhost:${besPort}
 test --bes_header=x-workspace-id=${workspaceId}
 test --bes_header=x-workspace-token=${besToken}
@@ -210,13 +213,14 @@ test --nocache_test_results
  * uses also ships a build for the worker's OS -- which is a change to that project, not to Croft. */
 export function buildConnectConfig(
   workspaceId: string,
+  host: string,
   grpcPort: number,
   besPort: number,
   executionEnabled: boolean,
   platform: WorkerPlatform | null,
   besToken: string,
 ): ConnectConfig {
-  let bazelrc = buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled, besToken);
+  let bazelrc = buildBazelrc(workspaceId, host, grpcPort, besPort, executionEnabled, besToken);
   let platformsBuild: string | null = null;
 
   if (executionEnabled && platform) {
@@ -242,7 +246,12 @@ platform(
   return { bazelrc, platformsBuild, platform };
 }
 
-export function buildReadme(workspaceName: string, grpcPort: number, executionEnabled: boolean): string {
+export function buildReadme(
+  workspaceName: string,
+  host: string,
+  grpcPort: number,
+  executionEnabled: boolean,
+): string {
   const buildRemotelySection = executionEnabled
     ? `## Build remotely
 
@@ -277,7 +286,7 @@ again if you want remote execution too, not just remote caching.`;
   return `# Sample Bazel project
 
 This project is wired to the Buildfarm provisioned for the "${workspaceName}" workspace,
-listening at \`localhost:${grpcPort}\`.
+listening at \`${host}:${grpcPort}\`.
 
 ${buildRemotelySection}
 
@@ -334,18 +343,20 @@ export class SampleProjectService {
 
   connectConfig(
     workspaceId: string,
+    host: string,
     grpcPort: number,
     executionEnabled: boolean,
     platform: WorkerPlatform | null,
   ): ConnectConfig {
     const besPort = Number(this.configService.get<string>('BES_PORT', '9095'));
     const besToken = computeBesIngestToken(workspaceId, this.configService.getOrThrow<string>('BES_INGEST_SECRET'));
-    return buildConnectConfig(workspaceId, grpcPort, besPort, executionEnabled, platform, besToken);
+    return buildConnectConfig(workspaceId, host, grpcPort, besPort, executionEnabled, platform, besToken);
   }
 
   createZip(
     workspaceId: string,
     workspaceName: string,
+    host: string,
     grpcPort: number,
     executionEnabled: boolean,
   ): ZipArchive {
@@ -355,8 +366,8 @@ export class SampleProjectService {
     const archive = new ZipArchive({ zlib: { level: 9 } });
     archive.append(buildModuleBazel(), { name: 'MODULE.bazel' });
     archive.append(buildBuildFile(), { name: 'BUILD.bazel' });
-    archive.append(buildBazelrc(workspaceId, grpcPort, besPort, executionEnabled, besToken), { name: '.bazelrc' });
-    archive.append(buildReadme(workspaceName, grpcPort, executionEnabled), { name: 'README.md' });
+    archive.append(buildBazelrc(workspaceId, host, grpcPort, besPort, executionEnabled, besToken), { name: '.bazelrc' });
+    archive.append(buildReadme(workspaceName, host, grpcPort, executionEnabled), { name: 'README.md' });
     // mode: 0o755 -- Bazel's sandbox runs sh_test srcs directly, so the script needs its
     // executable bit set inside the zip, not just readable.
     archive.append(buildStableTestScript(), { name: 'stable_test.sh', mode: 0o755 });

@@ -68,7 +68,14 @@ export class FilesService {
       const besToken = computeBesIngestToken(workspaceId, this.configService.getOrThrow<string>('BES_INGEST_SECRET'));
       sample.push({
         path: '.bazelrc',
-        content: buildBazelrc(workspaceId, instance.ports.grpc, besPort, executionEnabled, besToken),
+        content: buildBazelrc(
+          workspaceId,
+          instance.host ?? 'localhost',
+          instance.ports.grpc,
+          besPort,
+          executionEnabled,
+          besToken,
+        ),
       });
     }
     groups.push({
