@@ -56,13 +56,26 @@ export class OidcClientService {
       const issuerUrl = this.configService.get<string>('OIDC_ISSUER_URL')!;
       const clientId = this.configService.get<string>('OIDC_CLIENT_ID')!;
       const clientSecret = this.configService.get<string>('OIDC_CLIENT_SECRET')!;
+      // openid-client refuses plain-HTTP issuers by default (correctly, for production). Only
+      // relax that outside production, so a local/dev-only IdP (e.g. a test provider with no TLS)
+      // can be used without ever silently weakening a real deployment -- a production instance
+      // misconfigured with an http:// issuer still fails loudly instead of working insecurely.
+      const allowInsecure = issuerUrl.startsWith('http://') && process.env.NODE_ENV !== 'production';
       // Discovery result (including the issuer's JWKS) is cached on this singleton service for
       // the life of the process -- don't cache a failed attempt, so a transient IdP outage at
       // boot doesn't wedge SSO until restart.
-      this.configuration = client.discovery(new URL(issuerUrl), clientId, clientSecret).catch((err: unknown) => {
-        this.configuration = null;
-        throw err;
-      });
+      this.configuration = client
+        .discovery(
+          new URL(issuerUrl),
+          clientId,
+          clientSecret,
+          undefined,
+          allowInsecure ? { execute: [client.allowInsecureRequests] } : undefined,
+        )
+        .catch((err: unknown) => {
+          this.configuration = null;
+          throw err;
+        });
     }
     return this.configuration;
   }
