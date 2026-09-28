@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -60,5 +60,17 @@ export class TokenCipherService {
       decipher.final(),
     ]);
     return plaintext.toString('utf8');
+  }
+
+  /**
+   * A stable, non-secret per-workspace External ID for AWS STS AssumeRole trust policies
+   * (confused-deputy mitigation). Deliberately deterministic -- HMAC-SHA256 of the workspace id
+   * keyed by the same TOKEN_ENCRYPTION_KEY -- rather than a stored random value, so the
+   * credentials-setup page always shows the same id to paste into the customer's IAM trust policy
+   * no matter how many times it's reloaded before they actually connect, with zero new persisted
+   * state or env var.
+   */
+  deriveExternalId(workspaceId: string): string {
+    return createHmac('sha256', this.key).update(`croft-external-id:${workspaceId}`).digest('hex');
   }
 }

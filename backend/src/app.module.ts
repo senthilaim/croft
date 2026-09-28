@@ -18,6 +18,7 @@ import { DemoModule } from './demo/demo.module.js';
 import { CostModule } from './cost/cost.module.js';
 import { LiveModule } from './live/live.module.js';
 import { BillingModule } from './billing/billing.module.js';
+import { CloudCredentialsModule } from './cloud-credentials/cloud-credentials.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { BillingModule } from './billing/billing.module.js';
     TokenCipherModule,
     RepoAnalysisModule,
     BillingModule,
+    CloudCredentialsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

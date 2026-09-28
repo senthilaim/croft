@@ -61,3 +61,11 @@ class CacheCheckRequest(BaseModel):
     branch: str
     target: str
     grpcPort: int
+
+
+class ValidateCredentialRequest(BaseModel):
+    roleArn: str
+    externalId: str
+    bootstrapAccessKeyId: str
+    bootstrapSecretAccessKey: str
+    region: str

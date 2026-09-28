@@ -6,3 +6,4 @@ pydantic>=2.11
 grpcio>=1.68
 grpcio-tools>=1.68
 requests>=2.32
+boto3>=1.35

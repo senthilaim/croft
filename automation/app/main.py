@@ -10,6 +10,7 @@ from . import (
     bes_server,
     cache_check,
     cas_client,
+    credentials,
     infra_sampler,
     rebuild_simulation,
     repo_analysis,
@@ -17,6 +18,7 @@ from . import (
 from .auth import require_internal_token
 from .backends import get_backend
 from .cache_check import CacheCheckError
+from .credentials import CredentialValidationError
 from .db import get_db
 from .models import (
     AnalyzeRepoRequest,
@@ -24,6 +26,7 @@ from .models import (
     ProvisionRequest,
     SimulateRebuildRequest,
     TeardownRequest,
+    ValidateCredentialRequest,
 )
 from .rebuild_simulation import SimulationError
 from .repo_analysis import AnalysisError
@@ -48,6 +51,25 @@ def _start_background_services() -> None:
 @app.get("/health")
 def health():
     return {"status": "ok", "besPort": settings.bes_port}
+
+
+@app.post("/credentials/validate", dependencies=[Depends(require_internal_token)])
+def validate_credential(request: ValidateCredentialRequest):
+    """Confirms an AWS role is actually assumable with the given bootstrap key before the backend
+    encrypts and stores anything -- called from CloudCredentialsService.connect(), never exposed
+    to the frontend directly (this route itself is internal-token gated, same as every other route
+    here)."""
+    try:
+        assumed_role_arn = credentials.validate_assume_role(
+            request.roleArn,
+            request.externalId,
+            request.bootstrapAccessKeyId,
+            request.bootstrapSecretAccessKey,
+            request.region,
+        )
+    except CredentialValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"assumedRoleArn": assumed_role_arn}
 
 
 @app.post("/provision", dependencies=[Depends(require_internal_token)])
