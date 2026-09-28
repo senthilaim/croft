@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { CloudCredential, CloudCredentialSetupInfo, ConnectCloudCredentialRequest } from "@croft/shared-types";
+import {
+  isDocumentationRangeCidr,
+  type CloudCredential,
+  type CloudCredentialSetupInfo,
+  type ConnectCloudCredentialRequest,
+} from "@croft/shared-types";
 
 const card = "rounded-xl border border-black/10 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900";
 const field =
@@ -167,6 +172,15 @@ export function CloudCredentialsSettings({
             {disconnecting ? "Disconnecting…" : "Disconnect"}
           </button>
         </div>
+        {connection.allowedIngressCidrs.some((c) => isDocumentationRangeCidr(c)) && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300">
+            One of the allowed ingress CIDRs above ({connection.allowedIngressCidrs.find((c) => isDocumentationRangeCidr(c))}) is a
+            reserved example/documentation address, not a real one -- it was likely the connect form&apos;s
+            placeholder typed in by mistake. The Buildfarm&apos;s security group will silently block every real
+            connection until this is fixed. Disconnect and reconnect with your actual public IP, then click{" "}
+            <strong>Submit Setup</strong> again so the security group picks up the change.
+          </p>
+        )}
         {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
     );
@@ -306,7 +320,7 @@ export function CloudCredentialsSettings({
                     className={field}
                     value={cidr}
                     onChange={(e) => setCidrs(cidrs.map((c, j) => (j === i ? e.target.value : c)))}
-                    placeholder="203.0.113.5/32"
+                    placeholder="e.g. 198.51.100.5/32 (format only -- not a real address)"
                   />
                   {cidrs.length > 1 && (
                     <button
@@ -328,8 +342,18 @@ export function CloudCredentialsSettings({
               </button>
             </div>
             <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-              Who can reach the Buildfarm&apos;s ports -- your own IP and/or your CI provider&apos;s published IP
-              range. 0.0.0.0/0 is not allowed.
+              Who can reach the Buildfarm&apos;s ports -- the real public IP (as a /32) of the machine that will
+              run Bazel, and/or your CI provider&apos;s published IP range. Not sure what yours is? Check{" "}
+              <a
+                href="https://icanhazip.com"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-brand hover:underline"
+              >
+                icanhazip.com
+              </a>
+              . 0.0.0.0/0 and example/documentation addresses (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
+              are rejected -- they can never be a real machine.
             </p>
           </div>
         </div>

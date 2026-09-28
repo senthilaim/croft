@@ -36,7 +36,7 @@ const VALID_REQUEST: ConnectCloudCredentialRequest = {
   environment: 'staging',
   region: 'us-east-1',
   idleTimeoutMinutes: 60,
-  allowedIngressCidrs: ['203.0.113.5/32'],
+  allowedIngressCidrs: ['198.18.3.5/32'], // RFC 2544 benchmarking range -- real-shaped but not a documentation range
 };
 
 afterEach(() => {
@@ -90,9 +90,18 @@ describe('CloudCredentialsService.connect -- rejection paths', () => {
     await expect(
       service.connect('ws1', 'user1', {
         ...VALID_REQUEST,
-        allowedIngressCidrs: ['203.0.113.5/32', '0.0.0.0/0'],
+        allowedIngressCidrs: ['198.18.3.5/32', '0.0.0.0/0'],
       }),
     ).rejects.toThrow(/0\.0\.0\.0\/0/);
+  });
+
+  it('rejects the connect form\'s own documentation/example placeholder CIDR', async () => {
+    const model = fakeModel();
+    const service = new CloudCredentialsService(model as never, tokenCipher(), automationConfig());
+    await expect(
+      service.connect('ws1', 'user1', { ...VALID_REQUEST, allowedIngressCidrs: ['203.0.113.5/32'] }),
+    ).rejects.toThrow(/documentation\/example range/);
+    expect(model.findOneAndUpdate).not.toHaveBeenCalled();
   });
 });
 

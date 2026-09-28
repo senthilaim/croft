@@ -2,10 +2,11 @@ import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import type {
-  CloudCredential as CloudCredentialDto,
-  CloudCredentialSetupInfo,
-  ConnectCloudCredentialRequest,
+import {
+  isDocumentationRangeCidr,
+  type CloudCredential as CloudCredentialDto,
+  type CloudCredentialSetupInfo,
+  type ConnectCloudCredentialRequest,
 } from '@croft/shared-types';
 import { TokenCipherService } from '../crypto/token-cipher.service.js';
 import { buildRolePolicyJson, buildTrustPolicyJson } from './aws-policy-templates.js';
@@ -83,6 +84,13 @@ export class CloudCredentialsService {
     }
     if (request.allowedIngressCidrs.includes('0.0.0.0/0')) {
       throw new BadRequestException('0.0.0.0/0 is not allowed -- scope ingress to specific CIDR ranges');
+    }
+    if (request.allowedIngressCidrs.some((cidr) => isDocumentationRangeCidr(cidr))) {
+      throw new BadRequestException(
+        'One of your allowed ingress CIDRs is in a reserved documentation/example range ' +
+          '(192.0.2.0/24, 198.51.100.0/24, or 203.0.113.0/24) -- these can never be a real address. ' +
+          'Enter the actual public IP of the machine that will run Bazel, not the form\'s example value.',
+      );
     }
     if (!request.roleArn || !request.bootstrapAccessKeyId || !request.bootstrapSecretAccessKey) {
       throw new BadRequestException('Role ARN and bootstrap access key are required');
