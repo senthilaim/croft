@@ -10,3 +10,4 @@ export * from "./repo-analysis.js";
 export * from "./rebuild-simulation.js";
 export * from "./cache-check.js";
 export * from "./billing.js";
+export * from "./oidc.js";

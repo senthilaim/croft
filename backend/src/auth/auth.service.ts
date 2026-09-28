@@ -31,6 +31,11 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (!user) throw new UnauthorizedException('Invalid email or password');
 
+    // An OIDC-only account has no passwordHash -- reject with the exact same generic message as
+    // a wrong password or a nonexistent account, rather than throwing on a null bcrypt.compare
+    // argument. Never surfaces "this account uses SSO" to an unauthenticated caller.
+    if (!user.passwordHash) throw new UnauthorizedException('Invalid email or password');
+
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
     if (!passwordMatches) throw new UnauthorizedException('Invalid email or password');
 
@@ -57,7 +62,9 @@ export class AuthService {
     return this.usersService.findById(userId);
   }
 
-  private async buildAuthResponse(user: UserDocument): Promise<AuthResponse> {
+  /** Public so the OIDC callback path (backend/src/auth/oidc/oidc.service.ts) can mint the same
+   * Croft-native JWT pair a password signin/signup would, for a User it resolved itself. */
+  async buildAuthResponse(user: UserDocument): Promise<AuthResponse> {
     const tokens = await this.issueTokens(user.id);
     return { ...tokens, user: toUserDto(user) };
   }
