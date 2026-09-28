@@ -224,3 +224,44 @@ def test_status_never_leaks_terraform_state_or_vars_on_any_return_path(db):
         result = backend.status("ws1", db, existing_with_state)
     assert "terraformState" not in result
     assert "terraformVars" not in result
+
+
+def _status_with_no_host_output(existing: dict, db) -> dict:
+    backend = AwsBackend()
+    with (
+        patch("app.backends.aws_backend.terraform_manager.sync_module_files"),
+        patch("app.backends.aws_backend.terraform_manager.restore_state"),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        return backend.status("ws1", db, existing)
+
+
+def test_status_flips_to_stopped_when_a_previously_running_instance_is_gone(db):
+    # The real drift-detection case: an instance Croft believed was running was terminated
+    # outside Croft (e.g. the AWS console), and a re-check finds no host in state anymore.
+    existing = {"workspaceId": "ws1", "status": "running", "host": "1.2.3.4", "terraformState": "c3RhdGU="}
+    result = _status_with_no_host_output(existing, db)
+    assert result["status"] == "stopped"
+    assert result["host"] is None
+
+
+def test_status_does_not_overwrite_an_error_state_when_the_instance_never_existed(db):
+    # Regression: a failed/partial apply (e.g. died creating the security group, before the
+    # instance ever existed) has no host in state either -- that must NOT be treated the same as
+    # "a running instance disappeared." Overwriting status="error"/lastError with a bare "stopped"
+    # erases the only record of what actually went wrong, which is exactly what happened on a
+    # live account before this fix: every status poll silently erased the real failure.
+    existing = {
+        "workspaceId": "ws1", "status": "error", "host": None,
+        "lastError": "creating Security Group: InvalidParameterValue", "terraformState": "c3RhdGU=",
+    }
+    result = _status_with_no_host_output(existing, db)
+    assert result["status"] == "error"
+    assert result["lastError"] == "creating Security Group: InvalidParameterValue"
+
+
+def test_status_does_not_flip_a_provisioning_instance_to_stopped_either(db):
+    existing = {"workspaceId": "ws1", "status": "provisioning", "host": None, "terraformState": "c3RhdGU="}
+    result = _status_with_no_host_output(existing, db)
+    assert result["status"] == "provisioning"

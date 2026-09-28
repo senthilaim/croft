@@ -189,6 +189,14 @@ class AwsBackend:
 
         host = tf_outputs.get("host", {}).get("value")
         if not host:
+            # Only a genuine drift signal when we previously believed this was running --
+            # otherwise this is a failed/partial apply that never got as far as creating the
+            # instance (e.g. it died on the security group), and silently flipping that to
+            # "stopped" would erase the real status/lastError an "error" state was showing the
+            # user, replacing a real failure with a misleading "nothing's wrong, nothing's here"
+            # (a real bug: this is exactly what happened on a live account before this fix).
+            if existing.get("status") != "running":
+                return self._public(existing)
             return save_instance(
                 db, workspace_id, provider="aws", status="stopped", host=None, aws_resource_ids=[],
                 terraform_state=state_b64,
