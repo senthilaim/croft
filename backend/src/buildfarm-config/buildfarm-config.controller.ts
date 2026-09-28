@@ -25,7 +25,12 @@ export class BuildfarmConfigController {
     @CurrentWorkspace() workspace: WorkspaceDocument,
     @Body() dto: SaveBuildfarmConfigDto,
   ): Promise<BuildfarmConfig> {
-    const config = await this.buildfarmConfigService.save(workspace.id, dto.nodes, dto.edges);
+    const config = await this.buildfarmConfigService.save(
+      workspace.id,
+      dto.provider ?? 'docker',
+      dto.nodes,
+      dto.edges,
+    );
     return toBuildfarmConfigDto(config);
   }
 }

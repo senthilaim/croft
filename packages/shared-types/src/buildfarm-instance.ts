@@ -1,3 +1,5 @@
+import type { BuildfarmProvider } from "./buildfarm-config.js";
+
 export type BuildfarmInstanceStatus =
   | "provisioning"
   | "running"
@@ -45,9 +47,23 @@ export interface ConnectKit {
 
 export interface BuildfarmInstance {
   workspaceId: string;
-  composeProjectName: string;
+  provider: BuildfarmProvider;
+  /** Docker-only. Kept as an optional field rather than deleted -- it's still exactly what the
+   * Docker backend's teardown-by-project-name needs, and generalizing would force a parallel
+   * field for no benefit. Undefined for "aws" instances. */
+  composeProjectName?: string;
   ports: BuildfarmInstancePorts;
-  containerIds: string[];
+  /** Docker-only: container ids to tear down by. Undefined for "aws" instances (see
+   * awsResourceIds). Kept separate from awsResourceIds rather than overloading one field with two
+   * different id shapes across providers. */
+  containerIds?: string[];
+  /** AWS-only: EC2 instance ids + the security group id, as returned by `terraform show -json`.
+   * Undefined for "docker" instances. */
+  awsResourceIds?: string[];
+  /** Externally reachable address for the Buildfarm's gRPC endpoint -- the EC2 instance's public
+   * IP/DNS for "aws", or null for "docker" (callers fall back to "localhost", exactly today's
+   * behavior). Was implicit/hardcoded everywhere as "localhost" before this field existed. */
+  host: string | null;
   status: BuildfarmInstanceStatus;
   lastError: string | null;
   platform?: WorkerPlatform;

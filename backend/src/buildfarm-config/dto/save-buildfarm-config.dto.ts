@@ -1,8 +1,9 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsNumber, IsObject, IsString, ValidateNested } from 'class-validator';
-import type { BuildfarmNodeType } from '@croft/shared-types';
+import { IsArray, IsIn, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import type { BuildfarmNodeType, BuildfarmProvider } from '@croft/shared-types';
 
 const NODE_TYPES: BuildfarmNodeType[] = ['server', 'worker', 'redis', 'cache'];
+const PROVIDERS: BuildfarmProvider[] = ['docker', 'aws'];
 
 class PositionDto {
   @IsNumber()
@@ -39,6 +40,12 @@ class BuildfarmEdgeDto {
 }
 
 export class SaveBuildfarmConfigDto {
+  // Omitted -> 'docker', matching every design saved before this field existed. Not required so
+  // existing frontend clients mid-deploy don't suddenly start failing validation.
+  @IsOptional()
+  @IsIn(PROVIDERS)
+  provider?: BuildfarmProvider;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => BuildfarmNodeDto)
