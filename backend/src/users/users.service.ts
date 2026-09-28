@@ -19,7 +19,22 @@ export class UsersService {
 
   async create(email: string, passwordHash: string, name: string): Promise<UserDocument> {
     try {
-      return await this.userModel.create({ email, passwordHash, name });
+      return await this.userModel.create({ email, passwordHash, name, authProvider: 'password' });
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 11000) {
+        throw new ConflictException('An account with this email already exists');
+      }
+      throw err;
+    }
+  }
+
+  /** First-login provisioning for an OIDC account -- no password is ever set. Callers must have
+   * already verified the id_token this email/name/subject came from; this method trusts its
+   * inputs. Duplicate-email races (e.g. two near-simultaneous first logins) surface as the same
+   * ConflictException create() throws, via the same unique index on email. */
+  async createFromOidc(email: string, name: string, oidcSubject: string): Promise<UserDocument> {
+    try {
+      return await this.userModel.create({ email, name, authProvider: 'oidc', oidcSubject });
     } catch (err: unknown) {
       if (typeof err === 'object' && err !== null && 'code' in err && err.code === 11000) {
         throw new ConflictException('An account with this email already exists');
