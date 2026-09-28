@@ -12,7 +12,7 @@ export interface OidcAuthorizeUrlResponse {
 
 export interface OidcCallbackRequest {
   code: string;
+  state: string;
   codeVerifier: string;
   nonce: string;
-  redirectUri: string;
 }
