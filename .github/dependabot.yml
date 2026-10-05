@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # npm workspaces root -- covers frontend/backend/packages/* via the single root lockfile.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Security patches land immediately as their own PR; routine version bumps batch weekly so
+      # they don't bury real findings in noise.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      routine:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # frontend/ has its own separate lockfile alongside the root one -- kept in sync independently.
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      routine:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /automation
+    schedule:
+      interval: weekly
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      routine:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
+      - /automation
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

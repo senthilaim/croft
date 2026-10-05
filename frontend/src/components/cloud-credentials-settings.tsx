@@ -236,8 +236,9 @@ export function CloudCredentialsSettings({
           <ConsolePath>Add permissions → Create inline policy</ConsolePath> → <ConsolePath>JSON</ConsolePath> tab.
           Paste the policy below, then name and create it (e.g. <ConsolePath>CroftBuildfarmPermissions</ConsolePath>
           ). This is the entire set of permissions Croft ever has in your account -- EC2/VPC/networking,
-          Auto Scaling, ElastiCache, and (only if you enable a remote cache) a single S3 bucket plus the
-          one narrowly-scoped IAM role that lets just that bucket&apos;s cache instance reach it. Every
+          Auto Scaling, a Network Load Balancer for Server, ElastiCache, and (only if you enable a
+          remote cache) a single S3 bucket plus the one narrowly-scoped IAM role that lets just that
+          bucket&apos;s cache instance reach it. Every
           resource-level permission is scoped to this one workspace&apos;s own resource names -- nothing here
           reaches any other bucket, role, or cluster in your account.
         </p>

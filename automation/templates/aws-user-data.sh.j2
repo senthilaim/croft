@@ -4,7 +4,19 @@ set -euo pipefail
 # Distro-portable install (works across whatever AMI the module's data.aws_ami resolves to),
 # rather than a package-manager-specific install -- same reasoning as the Docker backend using the
 # docker CLI/compose plugin directly instead of relying on distro packages.
-curl -fsSL https://get.docker.com | sh
+#
+# Retried rather than a bare `curl | sh`: main.tf's depends_on orders Terraform's own API calls
+# (the route table association exists before this instance is created), but that doesn't bound how
+# long AWS's networking takes to actually converge, nor how long the guest's own network stack
+# takes to come up after boot -- cloud-init can start running this script before DNS/the route is
+# usable from inside the instance. Without a retry, that transient failure is permanent: `set -e`
+# kills the script, docker never installs, and `terraform apply` still reports success since it
+# only waits for "running" state, not for user_data to finish.
+for i in $(seq 1 10); do
+  curl -fsSL https://get.docker.com | sh && break
+  [ "$i" -eq 10 ] && exit 1
+  sleep 6
+done
 
 mkdir -p /opt/buildfarm
 cat > /opt/buildfarm/docker-compose.yml <<'CROFT_COMPOSE_EOF'

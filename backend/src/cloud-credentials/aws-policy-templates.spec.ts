@@ -38,6 +38,7 @@ describe('buildRolePolicyJson', () => {
         'CacheInstanceRole',
         'PassCacheInstanceRoleToEc2Only',
         'ServiceLinkedRolesForAsgAndElastiCache',
+        'ServerLoadBalancer',
       ]),
     );
   });
@@ -51,13 +52,19 @@ describe('buildRolePolicyJson', () => {
     ]);
   });
 
-  it('scopes ElastiCache permissions to this workspace\'s own cluster/subnet-group names', () => {
+  it('scopes ElastiCache permissions to this workspace\'s own cluster/replication-group/subnet-group names', () => {
     const policy = JSON.parse(buildRolePolicyJson(WORKSPACE_ID));
     const elasticache = statement(policy, 'RedisElastiCache');
     expect(elasticache.Resource).toEqual([
       `arn:aws:elasticache:*:*:cluster:croft-${WORKSPACE_ID}-*`,
+      `arn:aws:elasticache:*:*:replicationgroup:croft-${WORKSPACE_ID}-*`,
       `arn:aws:elasticache:*:*:subnetgroup:croft-${WORKSPACE_ID}*`,
     ]);
+    // Phase 0: a replication group, not a single cache cluster -- the old single-node actions
+    // are gone, replaced by their replication-group equivalents.
+    expect(elasticache.Action).toContain('elasticache:CreateReplicationGroup');
+    expect(elasticache.Action).toContain('elasticache:DeleteReplicationGroup');
+    expect(elasticache.Action).not.toContain('elasticache:CreateCacheCluster');
   });
 
   it('scopes the cache instance IAM role/instance-profile to this workspace only, never a wildcard', () => {
@@ -102,5 +109,19 @@ describe('buildRolePolicyJson', () => {
     const policy = JSON.parse(buildRolePolicyJson(WORKSPACE_ID));
     expect(statement(policy, 'Ec2AndNetworking').Resource).toBe('*');
     expect(statement(policy, 'WorkerAutoScaling').Resource).toBe('*');
+  });
+
+  it('grants the Phase 0 load-balancer permissions the NLB/target-group/listener need, unscoped like EC2 (ARNs embed an id unknown before creation)', () => {
+    const policy = JSON.parse(buildRolePolicyJson(WORKSPACE_ID));
+    const elb = statement(policy, 'ServerLoadBalancer');
+    expect(elb.Resource).toBe('*');
+    for (const action of [
+      'elasticloadbalancing:CreateLoadBalancer',
+      'elasticloadbalancing:CreateTargetGroup',
+      'elasticloadbalancing:CreateListener',
+      'elasticloadbalancing:RegisterTargets',
+    ]) {
+      expect(elb.Action).toContain(action);
+    }
   });
 });

@@ -234,6 +234,70 @@ def test_provision_resource_ids_include_cache_instance_when_present(db):
     assert instance["awsResourceIds"] == ["i-server123", "i-cache456"]
 
 
+def test_provision_persists_the_full_aws_topology_for_the_architecture_diagram(db):
+    """Feeds the Designer's AWS architecture diagram (AwsTopology in shared-types) -- every
+    Terraform output outputs.tf defines should survive into the saved instance, not just the 3
+    values provision() separately reads for host/awsResourceIds."""
+    backend = AwsBackend()
+    request = _request()
+    request.nodes.append(_node("cache-1", "cache", {"sizeGb": 10, "remoteCacheTier": "s3"}))
+    full_outputs = {
+        "host": {"value": "1.2.3.4"},
+        "server_instance_id": {"value": "i-server123"},
+        "cache_instance_id": {"value": "i-cache456"},
+        "vpc_id": {"value": "vpc-abc"},
+        "vpc_cidr": {"value": "10.90.0.0/16"},
+        "public_subnet_id": {"value": "subnet-pub"},
+        "public_subnet_cidr": {"value": "10.90.1.0/24"},
+        "private_subnet_id": {"value": "subnet-priv"},
+        "private_subnet_cidr": {"value": "10.90.2.0/24"},
+        "internet_gateway_id": {"value": "igw-1"},
+        "nat_gateway_id": {"value": "nat-1"},
+        "nat_gateway_public_ip": {"value": "5.6.7.8"},
+        "security_group_id": {"value": "sg-server"},
+        "internal_security_group_id": {"value": "sg-internal"},
+        "worker_launch_template_id": {"value": "lt-1"},
+        "worker_asg_name": {"value": "croft-ws1-worker"},
+        "redis_endpoint": {"value": "croft-ws1-redis.cache.amazonaws.com"},
+        "cache_instance_private_ip": {"value": "10.90.2.50"},
+        "cache_bucket_name": {"value": "croft-ws1-cache"},
+        "cache_iam_role_arn": {"value": "arn:aws:iam::123456789012:role/croft-ws1-cache"},
+        "redis_replication_group_id": {"value": "croft-ws1-redis"},
+    }
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply"),
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value=full_outputs),
+    ):
+        instance = backend.provision(request, db)
+
+    assert instance["awsTopology"] == {
+        "vpcId": "vpc-abc",
+        "vpcCidr": "10.90.0.0/16",
+        "publicSubnetId": "subnet-pub",
+        "publicSubnetCidr": "10.90.1.0/24",
+        "privateSubnetId": "subnet-priv",
+        "privateSubnetCidr": "10.90.2.0/24",
+        "internetGatewayId": "igw-1",
+        "natGatewayId": "nat-1",
+        "natGatewayPublicIp": "5.6.7.8",
+        "serverSecurityGroupId": "sg-server",
+        "internalSecurityGroupId": "sg-internal",
+        "serverInstanceId": "i-server123",
+        "workerLaunchTemplateId": "lt-1",
+        "workerAsgName": "croft-ws1-worker",
+        "redisEndpoint": "croft-ws1-redis.cache.amazonaws.com",
+        "cacheInstanceId": "i-cache456",
+        "cacheInstancePrivateIp": "10.90.2.50",
+        "cacheBucketName": "croft-ws1-cache",
+        "cacheIamRoleArn": "arn:aws:iam::123456789012:role/croft-ws1-cache",
+        "loadBalancerDnsName": "1.2.3.4",  # same output as host -- Server's NLB DNS name (Phase 0)
+        "redisReplicationGroupId": "croft-ws1-redis",
+    }
+
+
 def test_provision_checkpoints_partial_state_and_marks_error_when_apply_fails(db):
     backend = AwsBackend()
     with (
@@ -301,6 +365,10 @@ def test_teardown_reuses_the_stored_vars_from_the_last_successful_apply(db):
     assert destroy.call_args[0][1] == stored_vars
     assert instance["status"] == "stopped"
     assert instance["host"] is None
+    # Explicitly cleared to {} (not omitted) -- mirrors awsResourceIds' own []-clears convention,
+    # so the Designer's architecture diagram sees "nothing live" rather than stale ids/endpoints
+    # from before teardown.
+    assert instance["awsTopology"] == {}
 
 
 def test_teardown_falls_back_to_a_complete_tfvars_shape_when_none_was_ever_persisted(db):
