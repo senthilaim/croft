@@ -35,6 +35,61 @@ packages/shared-types/  TypeScript types shared between frontend and backend
 docker-compose.platform.yml   MongoDB for the platform itself
 ```
 
+## Architecture
+
+Two separate clients talk to Croft: a **browser**, for designing/monitoring a workspace, and the
+**customer's own `bazel` CLI or CI runner**, for actually building against the provisioned
+Buildfarm. The backend never touches build traffic directly — it only ever drives provisioning and
+reads back status; builds flow straight from the customer's Bazel to the Buildfarm and to the
+automation service's own BES server.
+
+```mermaid
+flowchart LR
+    Browser(["Browser"])
+    CI(["Customer's Bazel CLI / CI"])
+
+    subgraph Croft ["Croft (self-hosted)"]
+        FE["Next.js frontend<br/>(BFF: httpOnly cookies)"]
+        BE["NestJS backend<br/>auth, workspaces, live gateway"]
+        AUTO["Automation service<br/>FastAPI + BES gRPC :9095"]
+        DB[("MongoDB")]
+    end
+
+    subgraph BF ["Provisioned Buildfarm (Docker or AWS)"]
+        SRV["Server"]
+        WRK["Worker(s)"]
+        RDS[("Redis / ElastiCache")]
+    end
+
+    Browser <-->|HTTPS + WebSocket /ws| FE
+    FE -->|REST, Bearer token| BE
+    BE <--> DB
+    BE <-->|provision / status / teardown| AUTO
+    AUTO -->|docker compose up,<br/>or terraform apply| BF
+    CI -->|build events<br/>BES gRPC| AUTO
+    CI -->|remote cache / execution<br/>gRPC| SRV
+    SRV --- WRK
+    WRK --- RDS
+    SRV --- RDS
+```
+
+- **Frontend** is a backend-for-frontend, not a thin client: its own Next.js API routes hold the
+  JWT access/refresh tokens as httpOnly cookies and proxy everything else to the backend with a
+  Bearer header attached (see "Auth architecture" below) — the browser itself never sees a token.
+- **Backend** owns auth, multi-tenant workspaces, and the live WebSocket gateway, but delegates
+  everything infrastructure-shaped to the **automation service** rather than doing it itself —
+  provisioning, Docker/Terraform, and Bazel's own BES/ByteStream protocols all live there instead,
+  behind a small REST interface (`provision`/`status`/`teardown`/`infra`) the backend calls.
+- **Automation service** is where the two provisioning backends live side by side
+  (`DockerBackend`/`AwsBackend`, picked per workspace) behind one interface, plus the real gRPC
+  **Build Event Service** that Bazel streams build events to directly — build data never routes
+  through the NestJS backend first.
+- **Provisioned Buildfarm** is customer infrastructure, not Croft's: a Docker Compose stack on the
+  same host for local/dev use, or a decomposed Multi-AZ AWS topology (Server behind a load
+  balancer, a Worker Auto Scaling Group, ElastiCache) in the customer's own AWS account. Either way,
+  the customer's Bazel talks to it directly over gRPC for remote cache/execution — Croft is never
+  in that data path, only in the path that creates and monitors it.
+
 ## Build analytics (BEP) — live
 
 Plain `bazel build` streams live to the dashboard, no wrapper script. `automation/app/bes_server.py`
