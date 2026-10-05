@@ -42,6 +42,21 @@ services:
         limits:
           cpus: "{{ worker_cpu_limit }}"
           memory: {{ worker_memory_mb }}M
+{%- if remote_cache_enabled %}
+
+  # L2 remote cache -- local-disk only on Docker (the "local" tier, matching the designer's
+  # AWS-gating: "s3"/"both" are AWS-only). The Worker's own config.yml points at this service by
+  # its compose service name, resolved automatically by Docker's internal DNS.
+  bazel-remote:
+    image: buchgr/bazel-remote-cache:v2.5.2
+    command:
+      - --dir=/data
+      - --max_size={{ cache_size_gb }}
+      - --grpc_address=0.0.0.0:9092
+      - --http_address=0.0.0.0:9093
+    volumes:
+      - bazel-remote-data:/data
+{%- endif %}
 
 # Inlined rather than bind-mounted: a bind mount's path is resolved by the Docker daemon on the
 # host, so it breaks when this file is generated from inside the automation container.
@@ -49,3 +64,8 @@ configs:
   buildfarm_config:
     content: |
 {{ config_yml | indent(6, true) }}
+{%- if remote_cache_enabled %}
+
+volumes:
+  bazel-remote-data:
+{%- endif %}
