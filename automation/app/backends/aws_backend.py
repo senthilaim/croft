@@ -23,6 +23,42 @@ def _project_name(workspace_id: str) -> str:
     return f"workspace-{workspace_id}"
 
 
+def _output(tf_outputs: dict, key: str) -> str | None:
+    return tf_outputs.get(key, {}).get("value")
+
+
+# Feeds the Designer's AWS architecture diagram (see AwsTopology in
+# packages/shared-types/src/buildfarm-instance.ts) -- every key here has a matching Terraform
+# output in outputs.tf. Kept as a flat dict (not a dataclass) since this is written straight into
+# the Mongo doc by save_instance(), the same way every other AwsBackend field already is.
+def _topology_from_outputs(tf_outputs: dict) -> dict:
+    return {
+        "vpcId": _output(tf_outputs, "vpc_id"),
+        "vpcCidr": _output(tf_outputs, "vpc_cidr"),
+        "publicSubnetId": _output(tf_outputs, "public_subnet_id"),
+        "publicSubnetCidr": _output(tf_outputs, "public_subnet_cidr"),
+        "privateSubnetId": _output(tf_outputs, "private_subnet_id"),
+        "privateSubnetCidr": _output(tf_outputs, "private_subnet_cidr"),
+        "internetGatewayId": _output(tf_outputs, "internet_gateway_id"),
+        "natGatewayId": _output(tf_outputs, "nat_gateway_id"),
+        "natGatewayPublicIp": _output(tf_outputs, "nat_gateway_public_ip"),
+        "serverSecurityGroupId": _output(tf_outputs, "security_group_id"),
+        "internalSecurityGroupId": _output(tf_outputs, "internal_security_group_id"),
+        "serverInstanceId": _output(tf_outputs, "server_instance_id"),
+        "workerLaunchTemplateId": _output(tf_outputs, "worker_launch_template_id"),
+        "workerAsgName": _output(tf_outputs, "worker_asg_name"),
+        "redisEndpoint": _output(tf_outputs, "redis_endpoint"),
+        "cacheInstanceId": _output(tf_outputs, "cache_instance_id"),
+        "cacheInstancePrivateIp": _output(tf_outputs, "cache_instance_private_ip"),
+        "cacheBucketName": _output(tf_outputs, "cache_bucket_name"),
+        "cacheIamRoleArn": _output(tf_outputs, "cache_iam_role_arn"),
+        # Phase 0 (Multi-AZ HA): loadBalancerDnsName reuses the "host" output -- Server's NLB DNS
+        # name IS host now, no separate Terraform output needed for the same value.
+        "loadBalancerDnsName": _output(tf_outputs, "host"),
+        "redisReplicationGroupId": _output(tf_outputs, "redis_replication_group_id"),
+    }
+
+
 class AwsBackend:
     """Provisions a decomposed, horizontally-scalable topology per workspace via the
     automation/terraform/buildfarm-aws module: a dedicated Server instance (the only client-facing
@@ -159,8 +195,8 @@ class AwsBackend:
         # only checks Server's own host, same accepted gap.
         return save_instance(
             db, workspace_id, provider="aws", status="running", host=host,
-            aws_resource_ids=resource_ids, grpc_port=GRPC_PORT,
-            terraform_state=state_b64, terraform_vars=tfvars,
+            aws_resource_ids=resource_ids, aws_topology=_topology_from_outputs(tf_outputs),
+            grpc_port=GRPC_PORT, terraform_state=state_b64, terraform_vars=tfvars,
         )
 
     def teardown(self, workspace_id: str, db: Database, aws_credential: AwsCredential | None = None) -> dict:
@@ -231,7 +267,7 @@ class AwsBackend:
         state_b64 = terraform_manager.checkpoint_state(tf_dir)
         return save_instance(
             db, workspace_id, provider="aws", status="stopped", host=None, aws_resource_ids=[],
-            terraform_state=state_b64,
+            aws_topology={}, terraform_state=state_b64,
         )
 
     def status(self, workspace_id: str, db: Database, existing: dict) -> dict:

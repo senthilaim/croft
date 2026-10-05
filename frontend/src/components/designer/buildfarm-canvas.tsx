@@ -397,6 +397,14 @@ function CanvasInner({ workspaceId, initialConfig, initialInstance, canWrite, ha
                 );
               })}
             </div>
+            {provider === "aws" && (
+              <Link
+                href={`/workspaces/${workspaceId}/designer/architecture`}
+                className="rounded-full border border-black/10 bg-white/90 px-3 py-1 text-xs font-medium text-brand shadow hover:underline dark:border-white/10 dark:bg-zinc-900/90"
+              >
+                View AWS architecture →
+              </Link>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={handleSave}

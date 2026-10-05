@@ -23,6 +23,14 @@ locals {
     Workspace   = var.workspace_id
     Environment = "staging"
   }
+
+  # Two AZs -- the minimum ElastiCache's own Multi-AZ replication group needs, and roughly half
+  # the NAT Gateway cost of three. A third AZ later is just another entry in this map; every
+  # resource below is for_each'd off it rather than hand-duplicated per AZ.
+  azs = {
+    a = { az = data.aws_availability_zones.available.names[0], public_cidr = "10.90.1.0/24", private_cidr = "10.90.2.0/24" }
+    b = { az = data.aws_availability_zones.available.names[1], public_cidr = "10.90.3.0/24", private_cidr = "10.90.4.0/24" }
+  }
 }
 
 data "aws_availability_zones" "available" {
@@ -61,41 +69,50 @@ resource "aws_internet_gateway" "this" {
   tags   = merge(local.tags, { Name = local.name })
 }
 
-# Public: Server only. Deliberate, not an oversight -- the already-shipped CI-connect flow needs
-# the gRPC port reachable from wherever the customer's CI runs (e.g. GitHub-hosted Actions
-# runners), an unpingable IP range a private design can't accommodate.
+# Public: Server (+ its NLB) only. Deliberate, not an oversight -- the already-shipped CI-connect
+# flow needs the gRPC port reachable from wherever the customer's CI runs (e.g. GitHub-hosted
+# Actions runners), an unpingable IP range a private design can't accommodate. One per AZ so each
+# AZ's NAT Gateway has somewhere to live; Server itself stays pinned to AZ "a" (see aws_instance.server).
 resource "aws_subnet" "public" {
+  for_each                = local.azs
   vpc_id                  = aws_vpc.this.id
-  cidr_block              = "10.90.1.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[0]
+  cidr_block              = each.value.public_cidr
+  availability_zone       = each.value.az
   map_public_ip_on_launch = true
-  tags                    = merge(local.tags, { Name = "${local.name}-public" })
+  tags                    = merge(local.tags, { Name = "${local.name}-public-${each.key}" })
 }
 
-# Private: Worker ASG, the optional cache instance, ElastiCache. None of these are ever reached
-# from outside the VPC -- coordination is via the Redis backplane and internal CAS/ByteStream
+# Private: Worker ASG (spans both AZs), ElastiCache (Multi-AZ replication group), and the optional
+# cache instance (pinned to AZ "a", still a singular non-HA component). None of these are ever
+# reached from outside the VPC -- coordination is via the Redis backplane and internal CAS/ByteStream
 # traffic only, never a direct inbound connection from a client or CI runner (only Server is
-# client-facing). NAT Gateway gives them outbound internet (Docker Hub pulls, apt, S3) without a
-# public IP or any inbound route.
+# client-facing). Each AZ's own NAT Gateway gives it outbound internet (Docker Hub pulls, apt, S3)
+# without a public IP or any inbound route.
 resource "aws_subnet" "private" {
+  for_each          = local.azs
   vpc_id            = aws_vpc.this.id
-  cidr_block        = "10.90.2.0/24"
-  availability_zone = data.aws_availability_zones.available.names[0]
-  tags              = merge(local.tags, { Name = "${local.name}-private" })
+  cidr_block        = each.value.private_cidr
+  availability_zone = each.value.az
+  tags              = merge(local.tags, { Name = "${local.name}-private-${each.key}" })
 }
 
 resource "aws_eip" "nat" {
-  domain = "vpc"
-  tags   = merge(local.tags, { Name = local.name })
+  for_each = local.azs
+  domain   = "vpc"
+  tags     = merge(local.tags, { Name = "${local.name}-${each.key}" })
 }
 
 resource "aws_nat_gateway" "this" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
-  tags          = merge(local.tags, { Name = local.name })
+  for_each      = local.azs
+  allocation_id = aws_eip.nat[each.key].id
+  subnet_id     = aws_subnet.public[each.key].id
+  tags          = merge(local.tags, { Name = "${local.name}-${each.key}" })
   depends_on    = [aws_internet_gateway.this]
 }
 
+# Singular and shared across both public subnets -- the Internet Gateway is a single regional
+# resource, not AZ-bound, so there's no reason to duplicate this route table the way the private
+# ones are (those differ per AZ because each routes through its own AZ's NAT Gateway).
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
 
@@ -108,24 +125,30 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+  for_each       = local.azs
+  subnet_id      = aws_subnet.public[each.key].id
   route_table_id = aws_route_table.public.id
 }
 
+# Per-AZ on purpose: each private subnet routes through its own AZ's NAT Gateway, avoiding
+# cross-AZ NAT data-transfer charges -- the actual mechanism that makes "a NAT Gateway per AZ"
+# meaningful rather than decorative.
 resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.this.id
+  for_each = local.azs
+  vpc_id   = aws_vpc.this.id
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.this.id
+    nat_gateway_id = aws_nat_gateway.this[each.key].id
   }
 
-  tags = merge(local.tags, { Name = "${local.name}-private" })
+  tags = merge(local.tags, { Name = "${local.name}-private-${each.key}" })
 }
 
 resource "aws_route_table_association" "private" {
-  subnet_id      = aws_subnet.private.id
-  route_table_id = aws_route_table.private.id
+  for_each       = local.azs
+  subnet_id      = aws_subnet.private[each.key].id
+  route_table_id = aws_route_table.private[each.key].id
 }
 
 # ---------------------------------------------------------------------------
@@ -197,22 +220,26 @@ resource "aws_security_group" "internal" {
 
 resource "aws_elasticache_subnet_group" "redis" {
   name       = local.name
-  subnet_ids = [aws_subnet.private.id]
+  subnet_ids = [for s in aws_subnet.private : s.id]
   tags       = local.tags
 }
 
-# Single-node, cheapest class -- matches the existing staging-only posture (AWS_STAGING_INSTANCE_TYPES
-# is similarly the smallest 1-2 catalog entries). Multi-AZ/failover (a replication group) is
-# explicitly out of scope this release.
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id         = "${local.name}-redis"
-  engine             = "redis"
-  node_type          = var.redis_node_type
-  num_cache_nodes    = 1
-  port               = 6379
-  subnet_group_name  = aws_elasticache_subnet_group.redis.name
-  security_group_ids = [aws_security_group.internal.id]
-  tags               = local.tags
+# Multi-AZ replication group -- cheapest class (matches the existing staging-only posture;
+# AWS_STAGING_INSTANCE_TYPES is similarly the smallest 1-2 catalog entries), but with automatic
+# failover now that the private subnets span two AZs. num_cache_clusters = 2 (primary + one
+# replica) is the minimum that enables failover at all.
+resource "aws_elasticache_replication_group" "redis" {
+  replication_group_id       = "${local.name}-redis"
+  description                = "Croft Buildfarm workspace ${var.workspace_id} Redis backplane"
+  engine                     = "redis"
+  node_type                  = var.redis_node_type
+  num_cache_clusters         = 2
+  port                       = 6379
+  automatic_failover_enabled = true
+  multi_az_enabled           = true
+  subnet_group_name          = aws_elasticache_subnet_group.redis.name
+  security_group_ids         = [aws_security_group.internal.id]
+  tags                       = local.tags
 }
 
 # ---------------------------------------------------------------------------
@@ -221,20 +248,79 @@ resource "aws_elasticache_cluster" "redis" {
 
 # No instance profile / IAM role -- Server only runs `docker compose up` from user_data and never
 # calls an AWS API itself (see the plan's credentials section for why the customer's bootstrap
-# role grants no broader iam:PassRole either).
+# role grants no broader iam:PassRole either). Pinned to AZ "a" -- Server stays a single instance
+# this phase (behind the NLB below for a stable endpoint + health checks, not real failover);
+# making Server itself redundant is a deliberate later decision, not this one.
 resource "aws_instance" "server" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.server_instance_type
-  subnet_id                   = aws_subnet.public.id
+  subnet_id                   = aws_subnet.public["a"].id
   vpc_security_group_ids      = [aws_security_group.server.id]
   associate_public_ip_address = true
 
   # __REDIS_ENDPOINT__ is a placeholder render.py's render_aws_server_user_data() leaves in the
   # template -- only Terraform knows ElastiCache's real address, since it doesn't exist until this
-  # apply creates it.
-  user_data = replace(var.server_user_data, "__REDIS_ENDPOINT__", aws_elasticache_cluster.redis.cache_nodes[0].address)
+  # apply creates it. primary_endpoint_address is a stable DNS name the replication group
+  # auto-repoints to the new primary after a failover, so this substitution keeps working across a
+  # real failover with no re-apply needed.
+  user_data = replace(var.server_user_data, "__REDIS_ENDPOINT__", aws_elasticache_replication_group.redis.primary_endpoint_address)
+
+  # The subnet existing doesn't mean its route to the Internet Gateway exists yet -- subnet and
+  # route-table-association are sibling resources with no attribute-level reference between them,
+  # so without this, Terraform's graph can legally launch this instance before aws_route_table_
+  # association.public["a"] completes. user_data's first real command is a `curl | sh` under
+  # `set -euo pipefail` with no retry (see aws-user-data.sh.j2) -- launching into a subnet with no
+  # route out yet means that curl fails once and the instance never finishes bootstrapping, with
+  # `terraform apply` still reporting success (it only waits for "running", not for user_data).
+  depends_on = [aws_route_table_association.public["a"]]
 
   tags = merge(local.tags, { Name = "${local.name}-server" })
+}
+
+# ---------------------------------------------------------------------------
+# Server's Network Load Balancer -- a stable DNS endpoint + AWS-managed health checks, not real
+# failover (Server stays a single instance this phase). An NLB, not an ALB: Buildfarm's gRPC port
+# serves remote execution, remote cache and ByteStream all on one plain gRPC port -- raw TCP, not
+# HTTP path-routing, so pure L4 passthrough is the right fit and needs no protocol-aware listener
+# config the way an ALB's gRPC support would. Lives in the same AZ "a" public subnet as Server.
+# ---------------------------------------------------------------------------
+
+resource "aws_lb" "server" {
+  name               = "${local.name}-server"
+  load_balancer_type = "network"
+  internal           = false
+  subnets            = [aws_subnet.public["a"].id]
+  tags               = merge(local.tags, { Name = "${local.name}-server" })
+}
+
+resource "aws_lb_target_group" "server" {
+  name     = "${local.name}-server"
+  port     = var.grpc_port
+  protocol = "TCP"
+  vpc_id   = aws_vpc.this.id
+
+  health_check {
+    protocol = "TCP"
+  }
+
+  tags = local.tags
+}
+
+resource "aws_lb_target_group_attachment" "server" {
+  target_group_arn = aws_lb_target_group.server.arn
+  target_id        = aws_instance.server.id
+  port             = var.grpc_port
+}
+
+resource "aws_lb_listener" "server" {
+  load_balancer_arn = aws_lb.server.arn
+  port              = var.grpc_port
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.server.arn
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -256,7 +342,7 @@ resource "aws_launch_template" "worker" {
   # target as "no GRPC storage entry", see automation/templates/config.yml.j2).
   user_data = base64encode(
     replace(
-      replace(var.worker_user_data, "__REDIS_ENDPOINT__", aws_elasticache_cluster.redis.cache_nodes[0].address),
+      replace(var.worker_user_data, "__REDIS_ENDPOINT__", aws_elasticache_replication_group.redis.primary_endpoint_address),
       "__REMOTE_CACHE_GRPC_TARGET__",
       var.enable_cache ? "grpc://${try(aws_instance.cache[0].private_ip, "")}:${var.cache_grpc_port}" : ""
     )
@@ -273,12 +359,18 @@ resource "aws_autoscaling_group" "worker" {
   min_size            = var.worker_min
   max_size            = var.worker_max
   desired_capacity    = var.worker_desired
-  vpc_zone_identifier = [aws_subnet.private.id]
+  vpc_zone_identifier = [for s in aws_subnet.private : s.id]
 
   launch_template {
     id      = aws_launch_template.worker.id
     version = "$Latest"
   }
+
+  # Same reasoning as aws_instance.server's depends_on, but for the NAT path: the private subnet
+  # existing doesn't mean its route through the NAT Gateway exists yet. Without this, the ASG can
+  # launch instances before aws_route_table_association.private completes, and each one's user_data
+  # (same no-retry `curl | sh` under set -euo pipefail) fails permanently on first boot.
+  depends_on = [aws_route_table_association.private]
 
   tag {
     key                 = "Name"
@@ -329,7 +421,7 @@ resource "aws_instance" "cache" {
 
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.cache_instance_type
-  subnet_id                   = aws_subnet.private.id
+  subnet_id                   = aws_subnet.private["a"].id
   vpc_security_group_ids      = [aws_security_group.internal.id]
   associate_public_ip_address = false
   iam_instance_profile        = var.enable_s3_cache ? aws_iam_instance_profile.cache[0].name : null
@@ -337,6 +429,11 @@ resource "aws_instance" "cache" {
   # __S3_BUCKET_NAME__ is empty when enable_s3_cache is false -- render_aws_cache_user_data()
   # leaves bazel-remote's --s3.* flags off entirely in that case (local disk only).
   user_data = replace(var.cache_user_data, "__S3_BUCKET_NAME__", var.enable_s3_cache ? aws_s3_bucket.cache[0].bucket : "")
+
+  # Same NAT-routing race as the Worker ASG -- this instance is also in the private subnet and
+  # also runs the no-retry `curl | sh` bootstrap script. Narrowed to AZ "a" since that's where
+  # this (still singular, non-HA) instance actually lives.
+  depends_on = [aws_route_table_association.private["a"]]
 
   tags = merge(local.tags, { Name = "${local.name}-cache" })
 }

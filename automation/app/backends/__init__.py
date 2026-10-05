@@ -37,6 +37,7 @@ def save_instance(
     host: str | None = None,
     container_ids: list[str] | None = None,
     aws_resource_ids: list[str] | None = None,
+    aws_topology: dict | None = None,
     grpc_port: int | None = None,
     last_error: str | None = None,
     platform: dict | None = None,
@@ -70,6 +71,8 @@ def save_instance(
         doc["containerIds"] = container_ids
     if aws_resource_ids is not None:
         doc["awsResourceIds"] = aws_resource_ids
+    if aws_topology is not None:
+        doc["awsTopology"] = aws_topology
     if grpc_port is not None:
         doc["ports"] = {"grpc": grpc_port}
     if platform is not None:

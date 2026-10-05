@@ -81,6 +81,28 @@ const EC2_LAUNCH_TEMPLATE_ACTIONS = [
   'ec2:ModifyLaunchTemplate',
 ] as const;
 
+// Phase 0 (Multi-AZ HA): Server's Network Load Balancer. NLB/ALB ARNs embed an AWS-generated id
+// unknown before creation (e.g. loadbalancer/net/<name>/<id>), so -- same reasoning already
+// established for EC2 above -- these can't be pre-scoped to this workspace's own name prefix the
+// clean way S3/ElastiCache's customer-chosen-name ARNs can; left as Resource: '*' rather than a
+// false sense of scoping.
+const ELB_ACTIONS = [
+  'elasticloadbalancing:Describe*',
+  'elasticloadbalancing:CreateLoadBalancer',
+  'elasticloadbalancing:DeleteLoadBalancer',
+  'elasticloadbalancing:ModifyLoadBalancerAttributes',
+  'elasticloadbalancing:CreateTargetGroup',
+  'elasticloadbalancing:DeleteTargetGroup',
+  'elasticloadbalancing:ModifyTargetGroupAttributes',
+  'elasticloadbalancing:RegisterTargets',
+  'elasticloadbalancing:DeregisterTargets',
+  'elasticloadbalancing:CreateListener',
+  'elasticloadbalancing:DeleteListener',
+  'elasticloadbalancing:ModifyListener',
+  'elasticloadbalancing:AddTags',
+  'elasticloadbalancing:RemoveTags',
+] as const;
+
 export function buildTrustPolicyJson(externalId: string): string {
   return JSON.stringify(
     {
@@ -122,20 +144,33 @@ export function buildRolePolicyJson(workspaceId: string): string {
           Resource: '*',
         },
         {
+          // Phase 0: Redis is a Multi-AZ replication group (automatic failover), not a single
+          // cache cluster -- CreateReplicationGroup/DeleteReplicationGroup/ModifyReplicationGroup
+          // replace the old Create/DeleteCacheCluster actions. A replication group's underlying
+          // nodes still get their own cluster: ARNs (<name>-001/-002), so that resource pattern
+          // stays alongside the new replicationgroup: one, not instead of it.
           Sid: 'RedisElastiCache',
           Effect: 'Allow',
           Action: [
             'elasticache:Describe*',
             'elasticache:AddTagsToResource',
-            'elasticache:CreateCacheCluster',
-            'elasticache:DeleteCacheCluster',
+            'elasticache:CreateReplicationGroup',
+            'elasticache:DeleteReplicationGroup',
+            'elasticache:ModifyReplicationGroup',
             'elasticache:CreateCacheSubnetGroup',
             'elasticache:DeleteCacheSubnetGroup',
           ],
           Resource: [
             `arn:aws:elasticache:*:*:cluster:${namePrefix}-*`,
+            `arn:aws:elasticache:*:*:replicationgroup:${namePrefix}-*`,
             `arn:aws:elasticache:*:*:subnetgroup:${namePrefix}*`,
           ],
+        },
+        {
+          Sid: 'ServerLoadBalancer',
+          Effect: 'Allow',
+          Action: [...ELB_ACTIONS],
+          Resource: '*',
         },
         {
           Sid: 'RemoteCacheBucket',
