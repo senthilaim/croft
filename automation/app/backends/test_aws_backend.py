@@ -77,20 +77,24 @@ def test_provision_saves_running_status_with_host_and_instance_type_from_the_wor
         patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value="c3RhdGU="),
         patch(
             "app.backends.aws_backend.terraform_manager.outputs",
-            return_value={"host": {"value": "1.2.3.4"}, "instance_id": {"value": "i-abc123"}},
+            return_value={
+                "host": {"value": "1.2.3.4"},
+                "server_instance_id": {"value": "i-server123"},
+                "cache_instance_id": {"value": None},
+            },
         ),
     ):
         instance = backend.provision(_request(), db)
 
     apply.assert_called_once()
     tfvars = apply.call_args[0][1]
-    assert tfvars["instance_type"] == "c6i.large"  # from the Worker node's config.instanceType
+    assert tfvars["worker_instance_type"] == "c6i.large"  # from the Worker node's config.instanceType
     assert tfvars["allowed_ingress_cidrs"] == ["203.0.113.5/32"]
     assume_role.assert_called_once()
 
     assert instance["status"] == "running"
     assert instance["host"] == "1.2.3.4"
-    assert instance["awsResourceIds"] == ["i-abc123"]
+    assert instance["awsResourceIds"] == ["i-server123"]
     assert instance["provider"] == "aws"
     # Internal Terraform bookkeeping never leaks into the response the frontend eventually sees.
     assert "terraformState" not in instance
@@ -109,7 +113,125 @@ def test_provision_falls_back_to_the_default_instance_type_when_the_worker_node_
         patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
     ):
         backend.provision(request, db)
-    assert apply.call_args[0][1]["instance_type"] == "m6i.large"
+    assert apply.call_args[0][1]["worker_instance_type"] == "m6i.large"
+    assert apply.call_args[0][1]["server_instance_type"] == "m6i.large"
+
+
+def test_provision_defaults_worker_min_max_to_replicas_when_unset(db):
+    backend = AwsBackend()
+    request = _request()
+    request.nodes[1].config["replicas"] = 3  # worker node, no minReplicas/maxReplicas
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        backend.provision(request, db)
+    tfvars = apply.call_args[0][1]
+    assert tfvars["worker_desired"] == 3
+    assert tfvars["worker_min"] == 3
+    assert tfvars["worker_max"] == 3
+
+
+def test_provision_respects_explicit_worker_min_max(db):
+    backend = AwsBackend()
+    request = _request()
+    request.nodes[1].config.update({"replicas": 2, "minReplicas": 1, "maxReplicas": 5})
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        backend.provision(request, db)
+    tfvars = apply.call_args[0][1]
+    assert tfvars["worker_desired"] == 2
+    assert tfvars["worker_min"] == 1
+    assert tfvars["worker_max"] == 5
+
+
+def test_provision_with_no_cache_node_disables_the_cache_tier_entirely(db):
+    backend = AwsBackend()
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        backend.provision(_request(), db)
+    tfvars = apply.call_args[0][1]
+    assert tfvars["enable_cache"] is False
+    assert tfvars["enable_s3_cache"] is False
+    assert tfvars["cache_user_data"] == ""
+
+
+def test_provision_with_local_cache_tier_enables_cache_but_not_s3(db):
+    backend = AwsBackend()
+    request = _request()
+    request.nodes.append(_node("cache-1", "cache", {"sizeGb": 10, "remoteCacheTier": "local"}))
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        backend.provision(request, db)
+    tfvars = apply.call_args[0][1]
+    assert tfvars["enable_cache"] is True
+    assert tfvars["enable_s3_cache"] is False
+    assert tfvars["cache_user_data"] != ""
+    assert "__S3_BUCKET_NAME__" not in tfvars["cache_user_data"]
+
+
+def test_provision_with_s3_cache_tier_enables_both_flags_and_embeds_the_bucket_placeholder(db):
+    backend = AwsBackend()
+    request = _request()
+    request.nodes.append(
+        _node("cache-1", "cache", {"sizeGb": 10, "remoteCacheTier": "s3", "instanceType": "c6i.large"})
+    )
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch("app.backends.aws_backend.terraform_manager.outputs", return_value={}),
+    ):
+        backend.provision(request, db)
+    tfvars = apply.call_args[0][1]
+    assert tfvars["enable_cache"] is True
+    assert tfvars["enable_s3_cache"] is True
+    assert tfvars["cache_instance_type"] == "c6i.large"
+    assert "__S3_BUCKET_NAME__" in tfvars["cache_user_data"]
+    # The Terraform placeholder, not a real resolved value -- Python never resolves it (main.tf's
+    # replace() does, at apply time, once the real bucket exists).
+    assert "__REMOTE_CACHE_GRPC_TARGET__" in tfvars["worker_user_data"]
+
+
+def test_provision_resource_ids_include_cache_instance_when_present(db):
+    backend = AwsBackend()
+    request = _request()
+    request.nodes.append(_node("cache-1", "cache", {"sizeGb": 10, "remoteCacheTier": "local"}))
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply"),
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+        patch(
+            "app.backends.aws_backend.terraform_manager.outputs",
+            return_value={
+                "host": {"value": "1.2.3.4"},
+                "server_instance_id": {"value": "i-server123"},
+                "cache_instance_id": {"value": "i-cache456"},
+            },
+        ),
+    ):
+        instance = backend.provision(request, db)
+    assert instance["awsResourceIds"] == ["i-server123", "i-cache456"]
 
 
 def test_provision_checkpoints_partial_state_and_marks_error_when_apply_fails(db):
@@ -179,6 +301,30 @@ def test_teardown_reuses_the_stored_vars_from_the_last_successful_apply(db):
     assert destroy.call_args[0][1] == stored_vars
     assert instance["status"] == "stopped"
     assert instance["host"] is None
+
+
+def test_teardown_falls_back_to_a_complete_tfvars_shape_when_none_was_ever_persisted(db):
+    # A workspace whose terraformVars predates this field existing (or was never saved for some
+    # other reason) must still be tearable-down -- the fallback dict needs every key main.tf's
+    # variables.tf requires, not just the ones that existed in the single-instance design.
+    db.buildfarm_instances.insert_one({"workspaceId": "ws1", "terraformState": "c3RhdGU="})
+    backend = AwsBackend()
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.destroy") as destroy,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+    ):
+        backend.teardown("ws1", db, aws_credential=CRED)
+    tfvars = destroy.call_args[0][1]
+    for key in (
+        "region", "workspace_id", "allowed_ingress_cidrs", "grpc_port",
+        "server_instance_type", "server_user_data",
+        "worker_instance_type", "worker_min", "worker_max", "worker_desired", "worker_user_data",
+        "redis_node_type", "enable_cache", "enable_s3_cache", "cache_instance_type",
+        "cache_grpc_port", "cache_user_data",
+    ):
+        assert key in tfvars, f"fallback tfvars missing {key!r}"
 
 
 def test_status_never_leaks_terraform_state_or_vars_on_any_return_path(db):
