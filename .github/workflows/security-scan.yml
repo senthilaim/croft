@@ -1,0 +1,51 @@
+name: security-scan
+
+# Phase 0 (enterprise-RBE-parity roadmap): dependency + secret scanning, so a real vulnerability
+# (e.g. the critical Next.js RCE fixed alongside this workflow) surfaces automatically on every PR
+# instead of only when someone happens to run `npm audit` by hand.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Catches newly-published advisories against dependencies nothing here changed this week.
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # The single root lockfile (npm workspaces) already covers frontend/backend/packages/* in
+      # one tree -- this is exactly the command that caught the critical Next.js RCE this
+      # workflow exists to prevent a recurrence of. high/critical only; low/moderate findings are
+      # tracked via Dependabot's weekly PRs rather than failing every build on them.
+      - run: npm audit --omit=dev --audit-level=high
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip-audit -r automation/requirements.txt
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
