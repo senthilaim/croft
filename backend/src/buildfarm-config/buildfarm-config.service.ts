@@ -6,7 +6,7 @@ import type {
   BuildfarmConfigStatus,
   BuildfarmProvider,
 } from '@croft/shared-types';
-import { assertAwsInstanceTypesAllowed } from './aws-instance-types.js';
+import { assertAwsInstanceTypesAllowed, assertRemoteCacheTierAllowed } from './aws-instance-types.js';
 import {
   BuildfarmConfig,
   BuildfarmConfigDocument,
@@ -40,6 +40,7 @@ export class BuildfarmConfigService {
     edges: BuildfarmEdge[],
   ): Promise<BuildfarmConfigDocument> {
     assertAwsInstanceTypesAllowed(provider, nodes);
+    assertRemoteCacheTierAllowed(provider, nodes);
 
     const updated = await this.buildfarmConfigModel
       .findOneAndUpdate(

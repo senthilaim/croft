@@ -26,6 +26,7 @@ export interface ServerNodeConfig {
 }
 
 export interface WorkerNodeConfig {
+  /** Docker: the literal container count. AWS: the Auto Scaling Group's *desired* capacity. */
   replicas: number;
   cpuLimit: string;
   memoryLimitMb: number;
@@ -35,6 +36,10 @@ export interface WorkerNodeConfig {
   executionEnabled: boolean;
   /** Only meaningful when the design's provider is "aws". Undefined for Docker designs. */
   instanceType?: string;
+  /** AWS-only ASG bounds. Both optional; absent means min=max=desired=replicas, i.e. today's
+   * fixed-size behavior is the zero-config default -- nobody is forced into autoscaling. */
+  minReplicas?: number;
+  maxReplicas?: number;
 }
 
 export interface RedisNodeConfig {
@@ -43,8 +48,26 @@ export interface RedisNodeConfig {
   instanceType?: string;
 }
 
+/** The two Bazel remote-cache tiers Croft can wire into a Buildfarm worker's own `storages:`
+ * chain: a FILESYSTEM entry (L1, "local") and -- optionally -- a GRPC entry pointing at a new
+ * bazel-remote service (L2, "remote"), itself backed by local disk and/or S3. See the plan's
+ * "Buildfarm's own storages: list is a documented chain" reasoning. */
+export const REMOTE_CACHE_TIERS = ["local", "s3", "both"] as const;
+export type RemoteCacheTier = (typeof REMOTE_CACHE_TIERS)[number];
+
 export interface CacheNodeConfig {
+  /** L1 size -- the Worker's own FILESYSTEM storage, always on. Also reused as bazel-remote's own
+   * local-disk size when remoteCacheTier includes "local" (not split into two fields this release). */
   sizeGb: number;
+  /** Undefined = no L2 at all (today's behavior, no bazel-remote service created). "s3"/"both"
+   * are only meaningful when the design's provider is "aws" -- enforced server-side the same way
+   * Worker/Server/Redis's instanceType already is. */
+  remoteCacheTier?: RemoteCacheTier;
+  /** The dedicated AWS cache instance's type. Only meaningful when provider is "aws" and
+   * remoteCacheTier is set to any tier ("local" included) -- even without S3, a shared bazel-remote
+   * instance gives the Worker ASG a warm, shared L2 cache instead of each new worker starting with
+   * a cold local disk; S3 ("s3"/"both") additionally makes that shared cache durable. */
+  instanceType?: string;
 }
 
 export type BuildfarmNodeConfig =
