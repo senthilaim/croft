@@ -1,0 +1,20 @@
+name: {{ project_name }}
+
+services:
+  bazel-remote:
+    image: buchgr/bazel-remote-cache:v2.5.2
+    command:
+      - --dir=/data
+      - --max_size={{ local_size_gb }}
+      - --grpc_address=0.0.0.0:{{ grpc_port }}
+      - --http_address=0.0.0.0:{{ http_port }}
+{%- if s3_enabled %}
+      - --s3.bucket={{ s3_bucket_name }}
+      - --s3.endpoint=s3.{{ region }}.amazonaws.com
+      - --s3.auth_method=iam_role
+{%- endif %}
+    volumes:
+      - bazel-remote-data:/data
+
+volumes:
+  bazel-remote-data:

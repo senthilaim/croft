@@ -11,8 +11,12 @@ from ..topology import InvalidTopologyError, parse_topology
 from . import save_instance
 
 DEFAULT_INSTANCE_TYPE = "m6i.large"  # smallest staging-catalog entry, see cost-estimator.ts
+DEFAULT_REDIS_NODE_TYPE = "cache.t3.micro"  # single-node, cheapest class -- not yet a UI choice
 GRPC_PORT = 8980  # Buildfarm's own default; fixed rather than allocated -- each workspace gets
-# its own dedicated instance, so there's no port-collision risk the way Docker's shared host has.
+# its own dedicated Server instance, so there's no port-collision risk the way Docker's shared
+# host has.
+CACHE_GRPC_PORT = 9092  # bazel-remote's own port, distinct from Buildfarm's GRPC_PORT -- internal
+# only, never published outside the VPC.
 
 
 def _project_name(workspace_id: str) -> str:
@@ -20,9 +24,12 @@ def _project_name(workspace_id: str) -> str:
 
 
 class AwsBackend:
-    """Provisions one EC2 instance per workspace via the automation/terraform/buildfarm-aws
-    module, running the exact same docker-compose stack DockerBackend does locally. See the plan's
-    "Terraform integration" section for the full design; terraform_manager.py owns the actual
+    """Provisions a decomposed, horizontally-scalable topology per workspace via the
+    automation/terraform/buildfarm-aws module: a dedicated Server instance (the only client-facing
+    endpoint), a Worker Auto Scaling Group, AWS-managed ElastiCache for the Redis backplane, and an
+    optional dedicated cache instance (bazel-remote, optionally S3-backed) implementing the L2
+    remote-cache tier behind Worker's own FILESYSTEM (L1) storage. See the plan's "Terraform
+    integration" section for the full design; terraform_manager.py owns the actual
     subprocess/state-checkpoint mechanics this class calls into."""
 
     def provision(self, request: ProvisionRequest, db: Database) -> dict:
@@ -37,18 +44,55 @@ class AwsBackend:
 
         workspace_id = request.workspaceId
         cred = request.awsCredential
+        project_name = _project_name(workspace_id)
 
         save_instance(db, workspace_id, provider="aws", status="provisioning")
 
-        config_yml = render.render_config_yml(topology)
-        compose_yml = render.render_docker_compose_yml(
-            topology, _project_name(workspace_id), GRPC_PORT, config_yml
-        )
-        user_data = render.render_aws_user_data(compose_yml)
+        cache_cfg = topology.cache.config if topology.cache is not None else {}
+        remote_cache_tier = cache_cfg.get("remoteCacheTier")
+        enable_cache = remote_cache_tier is not None
+        enable_s3_cache = remote_cache_tier in ("s3", "both")
 
-        # Sized off the Worker node's instanceType -- the one instance this module creates runs
-        # the whole stack, so it's sized for the resource-heavy role (Server/Redis ride along).
-        instance_type = topology.worker.config.get("instanceType") or DEFAULT_INSTANCE_TYPE
+        # One config.yml, deployed unchanged to both Server and Worker (see render_config_yml's
+        # docstring) -- the placeholder tokens are literal text here, substituted by Terraform's
+        # own replace() once the real resources exist (main.tf).
+        config_yml = render.render_config_yml(
+            topology,
+            redis_uri="redis://__REDIS_ENDPOINT__:6379",
+            remote_cache_grpc_target=(
+                f"grpc://__REMOTE_CACHE_GRPC_TARGET__:{CACHE_GRPC_PORT}" if enable_cache else None
+            ),
+        )
+        server_user_data = render.render_aws_user_data(
+            render.render_aws_server_compose_yml(topology, project_name, GRPC_PORT, config_yml)
+        )
+        worker_user_data = render.render_aws_user_data(
+            render.render_aws_worker_compose_yml(topology, project_name, config_yml)
+        )
+        cache_user_data = ""
+        if enable_cache:
+            cache_user_data = render.render_aws_user_data(
+                render.render_bazel_remote_compose_yml(
+                    project_name,
+                    local_size_gb=int(cache_cfg.get("sizeGb", 10)),
+                    s3_enabled=enable_s3_cache,
+                    s3_bucket_name="__S3_BUCKET_NAME__",
+                    region=cred.region,
+                    grpc_port=CACHE_GRPC_PORT,
+                )
+            )
+
+        # Server/Worker/Cache each size off their own node's instanceType -- no longer one shared
+        # instance sized off Worker alone, now that each role is its own resource.
+        server_instance_type = topology.server.config.get("instanceType") or DEFAULT_INSTANCE_TYPE
+        worker_instance_type = topology.worker.config.get("instanceType") or DEFAULT_INSTANCE_TYPE
+        cache_instance_type = cache_cfg.get("instanceType") or DEFAULT_INSTANCE_TYPE
+
+        # replicas is the ASG's desired capacity; min/max default to it when unset, i.e. a fixed-size
+        # group (today's behavior) is the zero-config default -- see WorkerNodeConfig's doc comment.
+        worker_desired = int(topology.worker.config.get("replicas") or 1)
+        worker_min = int(topology.worker.config.get("minReplicas") or worker_desired)
+        worker_max = int(topology.worker.config.get("maxReplicas") or worker_desired)
 
         tf_dir = terraform_manager.workspace_dir(workspace_id)
         terraform_manager.sync_module_files(tf_dir)
@@ -70,10 +114,21 @@ class AwsBackend:
         tfvars = {
             "region": cred.region,
             "workspace_id": workspace_id,
-            "instance_type": instance_type,
             "allowed_ingress_cidrs": cred.allowedIngressCidrs,
             "grpc_port": GRPC_PORT,
-            "user_data": user_data,
+            "server_instance_type": server_instance_type,
+            "server_user_data": server_user_data,
+            "worker_instance_type": worker_instance_type,
+            "worker_min": worker_min,
+            "worker_max": worker_max,
+            "worker_desired": worker_desired,
+            "worker_user_data": worker_user_data,
+            "redis_node_type": DEFAULT_REDIS_NODE_TYPE,
+            "enable_cache": enable_cache,
+            "enable_s3_cache": enable_s3_cache,
+            "cache_instance_type": cache_instance_type,
+            "cache_grpc_port": CACHE_GRPC_PORT,
+            "cache_user_data": cache_user_data,
         }
 
         try:
@@ -93,14 +148,18 @@ class AwsBackend:
         state_b64 = terraform_manager.checkpoint_state(tf_dir)
         tf_outputs = terraform_manager.outputs(tf_dir, env)
         host = tf_outputs.get("host", {}).get("value")
-        instance_id = tf_outputs.get("instance_id", {}).get("value")
+        server_instance_id = tf_outputs.get("server_instance_id", {}).get("value")
+        cache_instance_id = tf_outputs.get("cache_instance_id", {}).get("value")
+        resource_ids = [rid for rid in (server_instance_id, cache_instance_id) if rid]
 
-        # Reflects Terraform's own view (the instance exists) not the remote Docker daemon's --
-        # confirming the compose stack inside it actually came up requires SSM/CloudWatch, out of
-        # scope this release (see infra() below and the plan's "Out of scope" section).
+        # Reflects Terraform's own view (the resources exist) not live health -- confirming the
+        # compose stacks inside them actually came up requires SSM/CloudWatch, out of scope this
+        # release (see infra() below and the plan's "Out of scope" section). Multi-resource drift
+        # (e.g. the ASG scaling to 0 healthy instances) isn't detected either -- status() still
+        # only checks Server's own host, same accepted gap.
         return save_instance(
             db, workspace_id, provider="aws", status="running", host=host,
-            aws_resource_ids=[instance_id] if instance_id else [], grpc_port=GRPC_PORT,
+            aws_resource_ids=resource_ids, grpc_port=GRPC_PORT,
             terraform_state=state_b64, terraform_vars=tfvars,
         )
 
@@ -135,14 +194,27 @@ class AwsBackend:
 
         # Reuse the exact var values the last successful apply used, rather than recomputing them
         # from the (possibly since-edited) CloudCredential -- Terraform should see no unrelated
-        # diff right before it deletes everything.
+        # diff right before it deletes everything. The fallback dict below only matters for a
+        # workspace whose terraformVars was never persisted (e.g. a record from before this field
+        # existed) -- mechanical, low-risk, since the normal path always reuses the real dict.
         tfvars = existing.get("terraformVars") or {
             "region": aws_credential.region,
             "workspace_id": workspace_id,
-            "instance_type": DEFAULT_INSTANCE_TYPE,
             "allowed_ingress_cidrs": aws_credential.allowedIngressCidrs,
             "grpc_port": GRPC_PORT,
-            "user_data": "",
+            "server_instance_type": DEFAULT_INSTANCE_TYPE,
+            "server_user_data": "",
+            "worker_instance_type": DEFAULT_INSTANCE_TYPE,
+            "worker_min": 1,
+            "worker_max": 1,
+            "worker_desired": 1,
+            "worker_user_data": "",
+            "redis_node_type": DEFAULT_REDIS_NODE_TYPE,
+            "enable_cache": False,
+            "enable_s3_cache": False,
+            "cache_instance_type": DEFAULT_INSTANCE_TYPE,
+            "cache_grpc_port": CACHE_GRPC_PORT,
+            "cache_user_data": "",
         }
 
         try:
@@ -168,9 +240,14 @@ class AwsBackend:
         # drift if the instance was ever terminated outside Croft (e.g. the AWS console), but
         # otherwise this rarely changes between polls since only Croft's own Terraform touches
         # these resources.
+        #
+        # `existing` is the *unfiltered* buildfarm_instances document (main.py's /status route
+        # reads it that way deliberately, since the check below needs terraformState) -- every
+        # return path here must strip it back out via _public() before handing it back, the same
+        # way save_instance()'s own projection already does for the paths that go through it.
         state_b64 = existing.get("terraformState")
         if not state_b64:
-            return existing
+            return self._public(existing)
 
         tf_dir = terraform_manager.workspace_dir(workspace_id)
         terraform_manager.sync_module_files(tf_dir)
@@ -180,20 +257,32 @@ class AwsBackend:
             terraform_manager.init(tf_dir, env)
             tf_outputs = terraform_manager.outputs(tf_dir, env)
         except TerraformError:
-            return existing  # tolerate a transient read failure rather than flipping to "error"
+            return self._public(existing)  # tolerate a transient read failure, don't flip to "error"
 
         host = tf_outputs.get("host", {}).get("value")
         if not host:
+            # Only a genuine drift signal when we previously believed this was running --
+            # otherwise this is a failed/partial apply that never got as far as creating the
+            # instance (e.g. it died on the security group), and silently flipping that to
+            # "stopped" would erase the real status/lastError an "error" state was showing the
+            # user, replacing a real failure with a misleading "nothing's wrong, nothing's here"
+            # (a real bug: this is exactly what happened on a live account before this fix).
+            if existing.get("status") != "running":
+                return self._public(existing)
             return save_instance(
                 db, workspace_id, provider="aws", status="stopped", host=None, aws_resource_ids=[],
                 terraform_state=state_b64,
             )
         if host == existing.get("host"):
-            return existing
+            return self._public(existing)
         return save_instance(
             db, workspace_id, provider="aws", status=existing.get("status") or "running", host=host,
             terraform_state=state_b64,
         )
+
+    @staticmethod
+    def _public(existing: dict) -> dict:
+        return {k: v for k, v in existing.items() if k not in ("terraformState", "terraformVars")}
 
     def infra(self, workspace_id: str, existing: dict) -> dict:
         # Live CPU/mem metrics need SSM/CloudWatch polling -- explicitly out of scope this

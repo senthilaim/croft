@@ -1,7 +1,7 @@
 export type CostProvider = "docker" | "aws" | "gcp" | "azure" | "onprem";
 
 export interface CostNodeRequirement {
-  role: "server" | "worker" | "redis";
+  role: "server" | "worker" | "redis" | "cache";
   replicas: number;
   /** Per replica. */
   vcpu: number;
@@ -37,6 +37,10 @@ export interface CostReport {
     vcpu: number;
     memGb: number;
     storageGb: number;
+    /** S3-backed remote cache storage (Cache node's sizeGb when remoteCacheTier is "s3"/"both")
+     * -- tracked separately from storageGb since S3's $/GB-month is materially different from
+     * generic block storage, and this only applies to the aws row. */
+    s3StorageGb: number;
   };
   usage: {
     hoursPerDay: number;

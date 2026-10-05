@@ -1,0 +1,27 @@
+name: {{ project_name }}
+
+services:
+  worker:
+    image: bazelbuild/buildfarm-worker:2.17.1
+    environment:
+      CONFIG_PATH: /config/config.yml
+    configs:
+      - source: buildfarm_config
+        target: /config/config.yml
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ worker_cpu_limit }}"
+          memory: {{ worker_memory_mb }}M
+
+# No ports published -- a worker is never reached directly (only Server is client-facing; worker
+# coordination is entirely via the Redis backplane, see main.tf's "internal" security group
+# comment). No "replicas" either: scaling happens at the EC2/Auto Scaling Group level for AWS, one
+# worker container per instance, unlike Docker's single-host replica count.
+#
+# Inlined rather than bind-mounted: a bind mount's path is resolved by the Docker daemon on the
+# host, so it breaks when this file is generated from inside the automation container.
+configs:
+  buildfarm_config:
+    content: |
+{{ config_yml | indent(6, true) }}

@@ -36,7 +36,7 @@ const VALID_REQUEST: ConnectCloudCredentialRequest = {
   environment: 'staging',
   region: 'us-east-1',
   idleTimeoutMinutes: 60,
-  allowedIngressCidrs: ['203.0.113.5/32'],
+  allowedIngressCidrs: ['198.18.3.5/32'], // RFC 2544 benchmarking range -- real-shaped but not a documentation range
 };
 
 afterEach(() => {
@@ -90,9 +90,32 @@ describe('CloudCredentialsService.connect -- rejection paths', () => {
     await expect(
       service.connect('ws1', 'user1', {
         ...VALID_REQUEST,
-        allowedIngressCidrs: ['203.0.113.5/32', '0.0.0.0/0'],
+        allowedIngressCidrs: ['198.18.3.5/32', '0.0.0.0/0'],
       }),
     ).rejects.toThrow(/0\.0\.0\.0\/0/);
+  });
+
+  it('rejects the connect form\'s own documentation/example placeholder CIDR', async () => {
+    const model = fakeModel();
+    const service = new CloudCredentialsService(model as never, tokenCipher(), automationConfig());
+    await expect(
+      service.connect('ws1', 'user1', { ...VALID_REQUEST, allowedIngressCidrs: ['203.0.113.5/32'] }),
+    ).rejects.toThrow(/documentation\/example range/);
+    expect(model.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a bare IP to /32 before storing it', async () => {
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ assumedRoleArn: 'arn:aws:sts::123:assumed-role/x' }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    const model = fakeModel();
+    const service = new CloudCredentialsService(model as never, tokenCipher(), automationConfig());
+
+    await service.connect('ws1', 'user1', { ...VALID_REQUEST, allowedIngressCidrs: ['44.212.220.79'] });
+
+    const [, writeArgs] = model.findOneAndUpdate.mock.calls[0]!;
+    expect(writeArgs.allowedIngressCidrs).toEqual(['44.212.220.79/32']);
   });
 });
 

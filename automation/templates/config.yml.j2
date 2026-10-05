@@ -4,7 +4,7 @@ server:
   name: shard
   port: 8980
 backplane:
-  redisUri: redis://redis:6379
+  redisUri: {{ redis_uri }}
   queues:
   - name: cpu
     allowUnmatched: true
@@ -25,3 +25,7 @@ worker:
   - type: FILESYSTEM
     path: cache
     maxSizeBytes: {{ cache_max_size_bytes }}
+  {%- if remote_cache_grpc_target %}
+  - type: GRPC
+    target: "{{ remote_cache_grpc_target }}"
+  {%- endif %}

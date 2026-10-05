@@ -20,6 +20,11 @@ interface CloudCatalog {
   storagePerGbMonth: number;
   /** Fraction of the on-demand price typically paid for spot/preemptible capacity. */
   spotFactor: number;
+  /** Object-storage $/GB-month (S3, materially cheaper than generic block storage) -- only set
+   * for aws, since the S3 remote-cache tier is AWS-gated this release. Left undefined for
+   * gcp/azure rather than invented, so a design's s3StorageGb naturally contributes $0 to those
+   * columns instead of a made-up GCS/Blob rate for a tier that doesn't exist on those clouds yet. */
+  s3PerGbMonth?: number;
 }
 
 export const PRICES_AS_OF = '2026-01';
@@ -31,6 +36,7 @@ export const CATALOG: Record<'aws' | 'gcp' | 'azure', CloudCatalog> = {
   aws: {
     label: 'AWS (us-east-1)',
     storagePerGbMonth: 0.08,
+    s3PerGbMonth: 0.023,
     spotFactor: 0.35,
     instances: [
       { name: 'm6i.large', vcpu: 2, memGb: 8, hourly: 0.096 },
@@ -88,9 +94,16 @@ export interface EstimateInput {
   onPremVcpuHour?: number;
 }
 
+// A small fixed profile for the optional dedicated cache instance (bazel-remote + local disk) --
+// not derived from a user-chosen instanceType, since requirementsFrom() is cloud-agnostic
+// (cheapestFit() picks the right machine per-catalog afterwards, same as every other role here).
+const CACHE_INSTANCE_VCPU = 1;
+const CACHE_INSTANCE_MEM_GB = 2;
+
 export function requirementsFrom(nodes: BuildfarmNode[]): CostReport['requirements'] {
   const out: CostNodeRequirement[] = [];
   let storageGb = 0;
+  let s3StorageGb = 0;
   for (const node of nodes) {
     const cfg = node.config as unknown as Record<string, unknown>;
     if (node.type === 'server') {
@@ -110,12 +123,28 @@ export function requirementsFrom(nodes: BuildfarmNode[]): CostReport['requiremen
     } else if (node.type === 'redis') {
       out.push({ role: 'redis', replicas: 1, vcpu: 0.25, memGb: (Number(cfg.memoryLimitMb) || 256) / 1024 });
     } else if (node.type === 'cache') {
-      storageGb += Number(cfg.sizeGb) || 0;
+      const sizeGb = Number(cfg.sizeGb) || 0;
+      storageGb += sizeGb;
+      const tier = cfg.remoteCacheTier;
+      if (tier !== undefined) {
+        // A dedicated cache instance -- even the "local" tier gets one (a shared cache behind the
+        // Worker ASG), see AwsBackend.provision()/main.tf.
+        out.push({ role: 'cache', replicas: 1, vcpu: CACHE_INSTANCE_VCPU, memGb: CACHE_INSTANCE_MEM_GB });
+      }
+      if (tier === 's3' || tier === 'both') {
+        s3StorageGb += sizeGb;
+      }
     }
   }
   const vcpu = out.reduce((s, n) => s + n.vcpu * n.replicas, 0);
   const memGb = out.reduce((s, n) => s + n.memGb * n.replicas, 0);
-  return { nodes: out, vcpu: round2(vcpu), memGb: round2(memGb), storageGb: Math.max(storageGb, MIN_STORAGE_GB) };
+  return {
+    nodes: out,
+    vcpu: round2(vcpu),
+    memGb: round2(memGb),
+    storageGb: Math.max(storageGb, MIN_STORAGE_GB),
+    s3StorageGb: round2(s3StorageGb),
+  };
 }
 
 function cheapestFit(catalog: CloudCatalog, vcpu: number, memGb: number): CostInstanceChoice {
@@ -152,13 +181,30 @@ export function estimateCosts(input: EstimateInput): CostReport {
     ],
   });
 
+  const workerNode = input.nodes.find((n) => n.type === 'worker');
+  const workerCfg = (workerNode?.config ?? {}) as unknown as Record<string, unknown>;
+  const maxReplicas = Number(workerCfg.maxReplicas) || 0;
+  const desiredReplicas = Math.max(1, Number(workerCfg.replicas) || 1);
+  const scalingNote =
+    maxReplicas > desiredReplicas
+      ? `Can scale up to ${maxReplicas} workers under load, increasing cost proportionally.`
+      : null;
+
   (Object.keys(CATALOG) as Array<'aws' | 'gcp' | 'azure'>).forEach((provider) => {
     const catalog = CATALOG[provider];
     const choice = cheapestFit(catalog, req.vcpu, req.memGb);
     const compute = choice.count * choice.hourlyEach * monthlyHours;
-    const storage = req.storageGb * catalog.storagePerGbMonth;
+    const storage = req.storageGb * catalog.storagePerGbMonth + req.s3StorageGb * (catalog.s3PerGbMonth ?? 0);
     const total = compute + storage;
     const spot = compute * catalog.spotFactor + storage;
+    const notes = [
+      `${choice.count} x ${choice.type} (${choice.vcpu} vCPU, ${choice.memGb} GB) for ${monthlyHours} h/month, plus ${req.storageGb} GB storage` +
+        (req.s3StorageGb > 0 && catalog.s3PerGbMonth
+          ? ` and ${req.s3StorageGb} GB of S3-backed remote cache.`
+          : '.'),
+      'Excludes network egress, load balancers, snapshots and support plans.',
+    ];
+    if (scalingNote) notes.push(scalingNote);
     estimates.push({
       provider,
       label: catalog.label,
@@ -168,10 +214,7 @@ export function estimateCosts(input: EstimateInput): CostReport {
       totalMonthly: round2(total),
       spotMonthly: round2(spot),
       perBuild: perBuild(total) === null ? null : round2(perBuild(total) as number),
-      notes: [
-        `${choice.count} x ${choice.type} (${choice.vcpu} vCPU, ${choice.memGb} GB) for ${monthlyHours} h/month, plus ${req.storageGb} GB storage.`,
-        'Excludes network egress, load balancers, snapshots and support plans.',
-      ],
+      notes,
     });
   });
 

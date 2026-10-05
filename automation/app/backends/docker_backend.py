@@ -50,7 +50,12 @@ class DockerBackend:
             compose_project_name=project_name,
         )
 
-        config_yml = render.render_config_yml(topology)
+        # The bazel-remote compose service (when enabled) is always reachable by its own compose
+        # service name, resolved by Docker's internal DNS -- same pattern as "redis"/"server"
+        # already being addressed by service name rather than an IP.
+        remote_cache_tier = topology.cache.config.get("remoteCacheTier") if topology.cache else None
+        remote_cache_grpc_target = "grpc://bazel-remote:9092" if remote_cache_tier is not None else None
+        config_yml = render.render_config_yml(topology, remote_cache_grpc_target=remote_cache_grpc_target)
         compose_yml = render.render_docker_compose_yml(topology, project_name, grpc_port, config_yml)
         path = docker_manager.write_project_files(workspace_id, compose_yml, config_yml)
 
