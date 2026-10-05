@@ -6,7 +6,7 @@ FROM docker:cli AS dockercli
 
 # Ships the Terraform CLI, for AWS provisioning (see app/terraform_manager.py). Pinned to a minor
 # version, same as the dockercli stage above.
-FROM hashicorp/terraform:1.9 AS terraformcli
+FROM hashicorp/terraform:1.16 AS terraformcli
 
 FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
