@@ -56,7 +56,7 @@ export class CloudCredentialsService {
     return {
       externalId,
       trustPolicyJson: buildTrustPolicyJson(externalId),
-      rolePolicyJson: buildRolePolicyJson(),
+      rolePolicyJson: buildRolePolicyJson(workspaceId),
     };
   }
 
