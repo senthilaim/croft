@@ -6,10 +6,11 @@ import type {
   BuildfarmProvider,
   CacheNodeConfig,
   RedisNodeConfig,
+  RemoteCacheTier,
   ServerNodeConfig,
   WorkerNodeConfig,
 } from "@croft/shared-types";
-import { AWS_STAGING_INSTANCE_TYPES } from "@croft/shared-types";
+import { AWS_STAGING_INSTANCE_TYPES, REMOTE_CACHE_TIERS } from "@croft/shared-types";
 import { NODE_LABELS } from "./node-defaults";
 
 interface ConfigPanelProps {
@@ -68,11 +69,25 @@ export function ConfigPanel({ nodeId, nodeType, config, provider, onChange, onDe
       )}
 
       {provider === "aws" && nodeType === "worker" && (
-        <InstanceTypeField
-          config={config as WorkerNodeConfig}
-          onChange={onChange as (c: WorkerNodeConfig) => void}
-        />
+        <>
+          <InstanceTypeField
+            config={config as WorkerNodeConfig}
+            onChange={onChange as (c: WorkerNodeConfig) => void}
+          />
+          <WorkerScalingFields
+            config={config as WorkerNodeConfig}
+            onChange={onChange as (c: WorkerNodeConfig) => void}
+          />
+        </>
       )}
+      {provider === "aws" &&
+        nodeType === "cache" &&
+        (config as CacheNodeConfig).remoteCacheTier !== undefined && (
+          <CacheInstanceTypeField
+            config={config as CacheNodeConfig}
+            onChange={onChange as (c: CacheNodeConfig) => void}
+          />
+        )}
 
       <p className="mt-auto text-xs text-zinc-400 dark:text-zinc-500">Node ID: {nodeId}</p>
     </aside>
@@ -107,6 +122,80 @@ function InstanceTypeField({
       <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
         Sizes the one EC2 instance this design provisions (runs Server, Worker, and Redis together).
         Staging only -- the smallest instance types are offered this release.
+      </span>
+    </Field>
+  );
+}
+
+/** AWS only. Replicas (above) is the Auto Scaling Group's *desired* capacity; these two optional
+ * bounds let it scale automatically with load instead of staying fixed. Left blank, the ASG's
+ * min/max both equal Replicas -- today's fixed-size behavior is the zero-config default, nobody
+ * is forced into autoscaling by connecting AWS. */
+function WorkerScalingFields({
+  config,
+  onChange,
+}: {
+  config: WorkerNodeConfig;
+  onChange: (c: WorkerNodeConfig) => void;
+}) {
+  return (
+    <>
+      <Field label="Min workers (optional)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={config.minReplicas ?? ""}
+          placeholder={String(config.replicas)}
+          onChange={(e) =>
+            onChange({ ...config, minReplicas: e.target.value === "" ? undefined : Number(e.target.value) })
+          }
+        />
+      </Field>
+      <Field label="Max workers (optional)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={config.maxReplicas ?? ""}
+          placeholder={String(config.replicas)}
+          onChange={(e) =>
+            onChange({ ...config, maxReplicas: e.target.value === "" ? undefined : Number(e.target.value) })
+          }
+        />
+        <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          Leave both blank to keep the worker count fixed at Replicas. Scales on CPU utilization.
+        </span>
+      </Field>
+    </>
+  );
+}
+
+/** AWS only, and only once a remote cache tier is selected below -- sizes the one dedicated EC2
+ * instance running bazel-remote, shared by every worker (even the "local" tier benefits: new
+ * Auto Scaling Group workers start with a warm shared cache instead of a cold local disk). */
+function CacheInstanceTypeField({
+  config,
+  onChange,
+}: {
+  config: CacheNodeConfig;
+  onChange: (c: CacheNodeConfig) => void;
+}) {
+  return (
+    <Field label="Cache instance type">
+      <select
+        className={inputClass}
+        value={config.instanceType ?? AWS_STAGING_INSTANCE_TYPES[0]}
+        onChange={(e) => onChange({ ...config, instanceType: e.target.value })}
+      >
+        {AWS_STAGING_INSTANCE_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+      <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+        Sizes the dedicated instance running the shared remote cache. Staging only.
       </span>
     </Field>
   );
@@ -217,6 +306,12 @@ function RedisFields({
   );
 }
 
+const TIER_LABELS: Record<RemoteCacheTier, string> = {
+  local: "Local (shared disk, no S3)",
+  s3: "S3 only",
+  both: "Local + S3",
+};
+
 function CacheFields({
   config,
   onChange,
@@ -225,14 +320,42 @@ function CacheFields({
   onChange: (c: BuildfarmNodeConfig) => void;
 }) {
   return (
-    <Field label="Size (GB)">
-      <input
-        type="number"
-        min={1}
-        className={inputClass}
-        value={config.sizeGb}
-        onChange={(e) => onChange({ ...config, sizeGb: Number(e.target.value) })}
-      />
-    </Field>
+    <>
+      <Field label="Size (GB)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={config.sizeGb}
+          onChange={(e) => onChange({ ...config, sizeGb: Number(e.target.value) })}
+        />
+        <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          L1: each Worker's own local disk cache. Always on.
+        </span>
+      </Field>
+      <Field label="Remote cache (L2)">
+        <select
+          className={inputClass}
+          value={config.remoteCacheTier ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...config,
+              remoteCacheTier: e.target.value === "" ? undefined : (e.target.value as RemoteCacheTier),
+            })
+          }
+        >
+          <option value="">Off</option>
+          {REMOTE_CACHE_TIERS.map((tier) => (
+            <option key={tier} value={tier}>
+              {TIER_LABELS[tier]}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          Optional shared cache behind L1, reused across every worker. S3 needs AWS connected --
+          keeps cache content durable and shared beyond any one instance&apos;s disk.
+        </span>
+      </Field>
+    </>
   );
 }
