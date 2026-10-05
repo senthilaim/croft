@@ -132,13 +132,17 @@ def _write_tfvars(path: Path, tfvars: dict) -> None:
     (path / "terraform.tfvars.json").write_text(json.dumps(tfvars))
 
 
+# Both timeouts were widened once the module grew past a single EC2 instance: an ElastiCache
+# cluster alone commonly takes 5-10 minutes to create or delete, on top of the NAT Gateway, Auto
+# Scaling Group (instance launch/termination), and optional S3 bucket + IAM role/instance-profile
+# this module now also owns. 20/15 minutes leaves real margin over the old 15/10.
 def apply(path: Path, tfvars: dict, env: dict) -> None:
     _write_tfvars(path, tfvars)
     _run_streaming(
         path,
         ["apply", "-auto-approve", "-no-color", "-input=false", "-var-file=terraform.tfvars.json"],
         env,
-        timeout=900,
+        timeout=1200,
     )
 
 
@@ -148,7 +152,7 @@ def destroy(path: Path, tfvars: dict, env: dict) -> None:
         path,
         ["destroy", "-auto-approve", "-no-color", "-input=false", "-var-file=terraform.tfvars.json"],
         env,
-        timeout=600,
+        timeout=900,
     )
 
 

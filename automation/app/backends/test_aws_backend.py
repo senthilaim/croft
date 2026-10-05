@@ -411,3 +411,68 @@ def test_status_does_not_flip_a_provisioning_instance_to_stopped_either(db):
     existing = {"workspaceId": "ws1", "status": "provisioning", "host": None, "terraformState": "c3RhdGU="}
     result = _status_with_no_host_output(existing, db)
     assert result["status"] == "provisioning"
+
+
+def test_full_topology_provision_then_teardown_is_internally_consistent(db):
+    """End-to-end mocked integration pass: a complete Server+Worker+Redis+Cache(tier=both)
+    topology through provision(), asserting every rendered artifact is internally consistent with
+    the others, then teardown() against the exact same persisted state -- still zero real
+    terraform subprocess, zero real AWS call (see the module docstring)."""
+    request = _request(workspace_id="full-topology-ws")
+    request.nodes[1].config.update({"replicas": 2, "minReplicas": 1, "maxReplicas": 6})  # worker
+    request.nodes.append(
+        _node("cache-1", "cache", {"sizeGb": 25, "remoteCacheTier": "both", "instanceType": "c6i.large"})
+    )
+
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.apply") as apply,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value="c3RhdGU="),
+        patch(
+            "app.backends.aws_backend.terraform_manager.outputs",
+            return_value={
+                "host": {"value": "203.0.113.9"},
+                "server_instance_id": {"value": "i-server789"},
+                "cache_instance_id": {"value": "i-cache789"},
+            },
+        ),
+    ):
+        instance = AwsBackend().provision(request, db)
+
+    tfvars = apply.call_args[0][1]
+
+    # Internal consistency: the worker's rendered config references the exact GRPC port the cache
+    # instance's own compose file was told to listen on.
+    assert f":{tfvars['cache_grpc_port']}" in tfvars["worker_user_data"]
+    assert f"--grpc_address=0.0.0.0:{tfvars['cache_grpc_port']}" in tfvars["cache_user_data"]
+    # S3 ("both") -- the bucket placeholder appears in the cache instance's own compose, ready for
+    # Terraform's replace() to resolve once the real bucket exists.
+    assert "__S3_BUCKET_NAME__" in tfvars["cache_user_data"]
+    assert "--s3.auth_method=iam_role" in tfvars["cache_user_data"]
+    # ASG bounds threaded through correctly.
+    assert tfvars["worker_desired"] == 2
+    assert tfvars["worker_min"] == 1
+    assert tfvars["worker_max"] == 6
+    assert tfvars["cache_instance_type"] == "c6i.large"
+
+    assert instance["status"] == "running"
+    assert instance["host"] == "203.0.113.9"
+    assert instance["awsResourceIds"] == ["i-server789", "i-cache789"]
+
+    saved = db.buildfarm_instances.find_one({"workspaceId": "full-topology-ws"})
+    assert saved["terraformVars"] == tfvars
+
+    # Teardown reuses exactly this persisted state/tfvars -- no recomputation from the (possibly
+    # since-edited) credential.
+    with (
+        patch("app.backends.aws_backend.credentials.assume_role", return_value=FAKE_SESSION),
+        patch("app.backends.aws_backend.terraform_manager.init"),
+        patch("app.backends.aws_backend.terraform_manager.destroy") as destroy,
+        patch("app.backends.aws_backend.terraform_manager.checkpoint_state", return_value=None),
+    ):
+        torn_down = AwsBackend().teardown("full-topology-ws", db, aws_credential=CRED)
+
+    assert destroy.call_args[0][1] == tfvars
+    assert torn_down["status"] == "stopped"
+    assert torn_down["host"] is None
