@@ -16,6 +16,6 @@
     "build": "npm run build --workspace packages/shared-types && npm run build --workspace backend && npm run build --workspace frontend"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^10.0.5"
   }
 }
