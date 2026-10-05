@@ -1,5 +1,5 @@
 # Build context: repository root (the frontend depends on the shared-types workspace package).
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared-types/package.json packages/shared-types/
@@ -10,7 +10,7 @@ COPY frontend frontend
 ENV BACKEND_ORIGIN=http://backend:4000
 RUN npm run build -w @croft/shared-types && npm run build -w frontend
 
-FROM node:22-slim
+FROM node:26-slim
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY --from=build /app/node_modules node_modules
