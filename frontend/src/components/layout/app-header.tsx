@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { User } from "@croft/shared-types";
+import type { User, Workspace } from "@croft/shared-types";
 import { Logo } from "./logo";
 import { ThemeToggle } from "../theme-toggle";
 
@@ -41,7 +41,7 @@ function group(label: string, subTabs: SubTab[]): Tab {
 function tabsFor(pathname: string): Tab[] {
   const match = pathname.match(/^\/workspaces\/([0-9a-f]+)/);
   if (!match) {
-    return [{ label: "Workspaces", href: "/workspaces", active: () => true }];
+    return [{ label: "Dashboard", href: "/workspaces", active: () => true }];
   }
   const base = `/workspaces/${match[1]}`;
   // Ordered to match the customer journey, not the order features shipped in: evaluate/design a
@@ -125,6 +125,11 @@ const menuItem =
 export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -145,11 +150,50 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
     };
   }, [menuOpen]);
 
+  // Lazy, cached: only fetched the first time the menu is opened (this header renders on every
+  // page, so eagerly fetching on mount would mean every single page load does an extra round
+  // trip just for a list nobody may ever look at).
+  useEffect(() => {
+    if (!menuOpen || workspaces !== null) return;
+    fetch("/api/workspaces")
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setWorkspaces)
+      .catch(() => setWorkspaces([]));
+  }, [menuOpen, workspaces]);
+
   async function handleSignOut() {
     setSigningOut(true);
     await fetch("/api/auth/signout", { method: "POST" });
     router.push("/signin");
     router.refresh();
+  }
+
+  async function handleCreateWorkspace(e: React.FormEvent) {
+    e.preventDefault();
+    setCreateSubmitting(true);
+    setCreateError(null);
+    try {
+      const res = await fetch("/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newWorkspaceName }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCreateError(data.message ?? "Could not create workspace");
+        return;
+      }
+      const workspace: Workspace = await res.json();
+      setMenuOpen(false);
+      setCreating(false);
+      setNewWorkspaceName("");
+      router.push(`/workspaces/${workspace.id}`);
+      router.refresh();
+    } catch {
+      setCreateError("Could not reach the server");
+    } finally {
+      setCreateSubmitting(false);
+    }
   }
 
   const initials =
@@ -262,13 +306,79 @@ export function AppHeader({ user, breadcrumb }: AppHeaderProps) {
                 </div>
               </div>
 
+              <div className="border-t border-black/5 py-1.5 dark:border-white/5">
+                <p className="px-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                  Workspaces
+                </p>
+                {workspaces === null ? (
+                  <p className="px-4 py-1.5 text-xs text-zinc-400 dark:text-zinc-500">Loading…</p>
+                ) : workspaces.length === 0 ? (
+                  <p className="px-4 py-1.5 text-xs text-zinc-400 dark:text-zinc-500">No workspaces yet.</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto">
+                    {workspaces.map((w) => {
+                      const active = pathname === `/workspaces/${w.id}` || pathname.startsWith(`/workspaces/${w.id}/`);
+                      return (
+                        <Link
+                          key={w.id}
+                          href={`/workspaces/${w.id}`}
+                          role="menuitem"
+                          onClick={() => setMenuOpen(false)}
+                          className={`${menuItem} ${active ? "bg-black/[.04] dark:bg-white/[.06]" : ""}`}
+                        >
+                          <MenuIcon>
+                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          </MenuIcon>
+                          <span className="truncate">{w.name}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {creating ? (
+                  <form onSubmit={handleCreateWorkspace} className="flex flex-col gap-1.5 px-4 py-2">
+                    <input
+                      autoFocus
+                      type="text"
+                      required
+                      placeholder="e.g. My Project"
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                      className="h-8 w-full rounded-md border border-black/10 bg-white px-2.5 text-sm text-zinc-900 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                    {createError && <p className="text-xs text-red-600 dark:text-red-400">{createError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={createSubmitting}
+                        className="flex-1 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+                      >
+                        {createSubmitting ? "Creating…" : "Create"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCreating(false);
+                          setCreateError(null);
+                        }}
+                        className="rounded-md px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-black/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button role="menuitem" onClick={() => setCreating(true)} className={menuItem}>
+                    <MenuIcon>
+                      <path d="M12 5v14M5 12h14" />
+                    </MenuIcon>
+                    New workspace
+                  </button>
+                )}
+              </div>
+
               <div className="border-t border-black/5 py-1 dark:border-white/5">
-                <Link href="/workspaces" role="menuitem" onClick={() => setMenuOpen(false)} className={menuItem}>
-                  <MenuIcon>
-                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                  </MenuIcon>
-                  All workspaces
-                </Link>
                 <a href={`${REPO}/blob/main/SETUP.md`} target="_blank" rel="noreferrer" role="menuitem" className={menuItem}>
                   <MenuIcon>
                     <path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 19a2 2 0 0 1 2-2h12" />
