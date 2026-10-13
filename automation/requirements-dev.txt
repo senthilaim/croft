@@ -2,7 +2,7 @@
 # requirements.txt). Run tests locally with:
 #   pip install -r requirements.txt -r requirements-dev.txt && pytest
 -r requirements.txt
-pytest>=8.3
-moto[sts]>=5.0
-mongomock>=4.1
-pyyaml>=6.0
+pytest>=9.1.1
+moto[sts]>=5.2.3
+mongomock>=4.3.0
+pyyaml>=6.0.3
