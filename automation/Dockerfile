@@ -8,7 +8,7 @@ FROM docker:cli AS dockercli
 # version, same as the dockercli stage above.
 FROM hashicorp/terraform:1.9 AS terraformcli
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
